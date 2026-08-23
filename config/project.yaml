@@ -1,0 +1,15 @@
+project:
+  id: atm-knowledge-graph
+  name: 航管知识图谱
+  namespace: "urn:atm-knowledge-graph:"
+
+paths:
+  ontologyConfig: config/ontology.yaml
+  sourceConfig: config/sources.yaml
+  neo4jConfig: config/neo4j.yaml
+  syncConfig: config/sync.yaml
+  queryConfig: config/query.yaml
+  apiConfig: config/api.yaml
+  mapping: mapping/字段映射.xlsx
+  queries: queries
+  fixtures: fixtures

@@ -1,0 +1,4 @@
+airspaceCode,airspaceName,airspaceTypeCode,airspaceTypeName,airspaceLowerLimit,airspaceUpperLimit
+AS0001,模拟空域1,101,TEST,0,14321
+AS0002,模拟空域2,102,TEST,0,7228
+AS0003,模拟空域3,103,TEST,0,6453

@@ -1,0 +1,35 @@
+每日开发启动
+
+1. 进入项目目录。
+2. 设置 ATMKG_NEO4J_URI、ATMKG_NEO4J_DATABASE、ATMKG_NEO4J_USERNAME、ATMKG_NEO4J_PASSWORD。
+3. Maven 不在 PATH 时设置 MAVEN_HOME。
+4. 执行 tools\neo4j-dev.cmd start。
+5. 执行 tools\service.cmd，并保持该前台窗口开启，不要关闭或按 Ctrl+C。
+6. 打开 http://127.0.0.1:18080/viewer/。
+
+Review CLI
+
+Set ATMKG_NEO4J_URI, ATMKG_NEO4J_DATABASE, ATMKG_NEO4J_USERNAME and
+ATMKG_NEO4J_PASSWORD, then run tools\review.cmd (Windows) or tools/review.sh (Linux).
+If Maven is not on PATH, set MAVEN_HOME. The tool reads review/queries.yaml itself.
+
+Minimal Browser fallback
+
+Open the configured Neo4j Browser and run ordinary Cypher directly, for example:
+
+MATCH (n:KGEntity {kg_project: 'atm-knowledge-graph', kg_source_key: 'YOUR_SOURCE_KEY'})
+OPTIONAL MATCH (n)-[r]-(m:KGEntity {kg_project: 'atm-knowledge-graph'})
+WHERE r IS NULL OR r.kg_project = 'atm-knowledge-graph'
+RETURN n, r, m;
+
+Neo4j control fallback: enter NEO4J_HOME\bin and run neo4j.bat console on Windows,
+or enter NEO4J_HOME/bin and run ./neo4j console on Linux.
+
+HTTP service
+
+Set the same four ATMKG_NEO4J_* variables, then run tools\service.cmd or
+tools/service.sh. If Maven is not on PATH, set MAVEN_HOME. Open
+http://127.0.0.1:18080/api/v1/health in a browser, or use:
+
+curl http://127.0.0.1:18080/api/v1/health
+curl -H "Content-Type: application/json" -d "{\"uid\":\"YOUR_KG_UID\"}" http://127.0.0.1:18080/api/v1/graph/one-hop

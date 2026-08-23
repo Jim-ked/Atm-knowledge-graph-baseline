@@ -1,0 +1,121 @@
+version: 2
+purpose: Optional ReviewTool and Neo4j Browser inspection templates; not a QueryService contract.
+default_project_id: atm-knowledge-graph
+
+# locator controls only ReviewTool prompting. All values except the bounded path depth are
+# bound as Neo4j Driver parameters. The templates remain directly usable as ordinary Cypher.
+templates:
+  entity:
+    title: 查询实体
+    locator: single
+    parameters: [project_id, source_key, kg_uid]
+    literal_parameters: []
+    cypher: |
+      MATCH (entity:KGEntity {kg_project: $project_id})
+      WHERE ($source_key <> '' AND entity.kg_source_key = $source_key)
+         OR ($source_key = '' AND entity.kg_uid = $kg_uid)
+      RETURN entity;
+
+  one_hop:
+    title: 完整一跳
+    locator: single
+    parameters: [project_id, source_key, kg_uid]
+    literal_parameters: []
+    cypher: |
+      MATCH (center:KGEntity {kg_project: $project_id})
+      WHERE ($source_key <> '' AND center.kg_source_key = $source_key)
+         OR ($source_key = '' AND center.kg_uid = $kg_uid)
+      OPTIONAL MATCH (center)-[relationship]-(neighbor:KGEntity {kg_project: $project_id})
+      WHERE relationship IS NULL OR relationship.kg_project = $project_id
+      RETURN center, relationship, neighbor;
+
+  k_hop:
+    title: 完整 K 跳子图
+    locator: single
+    parameters: [project_id, source_key, kg_uid]
+    literal_parameters: [depth]
+    cypher: |
+      MATCH path = (center:KGEntity {kg_project: $project_id})-[*0..{{depth}}]-(reached:KGEntity {kg_project: $project_id})
+      WHERE (($source_key <> '' AND center.kg_source_key = $source_key)
+          OR ($source_key = '' AND center.kg_uid = $kg_uid))
+        AND all(item IN relationships(path) WHERE item.kg_project = $project_id)
+      WITH collect(DISTINCT reached) AS reached_nodes
+      UNWIND reached_nodes AS node
+      OPTIONAL MATCH (node)-[relationship]->(neighbor:KGEntity {kg_project: $project_id})
+      WHERE neighbor IN reached_nodes AND relationship.kg_project = $project_id
+      RETURN DISTINCT node, relationship, neighbor;
+
+  path:
+    title: 两实体出向最短路径
+    locator: pair
+    parameters: [project_id, start_source_key, start_kg_uid, target_source_key, target_kg_uid]
+    literal_parameters: [max_depth]
+    cypher: |
+      MATCH path = shortestPath(
+        (source:KGEntity {kg_project: $project_id})-[*1..{{max_depth}}]->
+        (target:KGEntity {kg_project: $project_id})
+      )
+      WHERE (($start_source_key <> '' AND source.kg_source_key = $start_source_key)
+          OR ($start_source_key = '' AND source.kg_uid = $start_kg_uid))
+        AND (($target_source_key <> '' AND target.kg_source_key = $target_source_key)
+          OR ($target_source_key = '' AND target.kg_uid = $target_kg_uid))
+        AND all(item IN relationships(path) WHERE item.kg_project = $project_id)
+      RETURN path;
+
+  relationship_type:
+    title: 按关系类型
+    locator: none
+    parameters: [project_id, relationship_type]
+    literal_parameters: []
+    cypher: |
+      MATCH (source:KGEntity {kg_project: $project_id})-[relationship]->(target:KGEntity {kg_project: $project_id})
+      WHERE relationship.kg_project = $project_id
+        AND type(relationship) = $relationship_type
+      RETURN source, relationship, target;
+
+  entity_type:
+    title: 按实体类型
+    locator: none
+    parameters: [project_id, entity_type]
+    literal_parameters: []
+    cypher: |
+      MATCH (entity:KGEntity {kg_project: $project_id})
+      WHERE $entity_type IN labels(entity)
+      RETURN entity;
+
+  duplicate_kg_uid:
+    title: 重复 UID 检查
+    locator: none
+    parameters: [project_id]
+    literal_parameters: []
+    cypher: |
+      CALL {
+        MATCH (entity:KGEntity {kg_project: $project_id})
+        WITH entity.kg_uid AS kg_uid, count(*) AS occurrences
+        WHERE occurrences > 1
+        RETURN collect({kind: 'node', kg_uid: kg_uid, occurrences: occurrences}) AS node_duplicates
+      }
+      CALL {
+        MATCH ()-[relationship {kg_project: $project_id}]->()
+        WITH relationship.kg_uid AS kg_uid, count(*) AS occurrences
+        WHERE occurrences > 1
+        RETURN collect({kind: 'relationship', kg_uid: kg_uid, occurrences: occurrences}) AS relationship_duplicates
+      }
+      WITH node_duplicates + relationship_duplicates AS duplicates
+      RETURN size(duplicates) AS duplicate_uid_groups, duplicates;
+
+  graph_counts:
+    title: 图总体情况
+    locator: none
+    parameters: [project_id]
+    literal_parameters: []
+    cypher: |
+      CALL {
+        MATCH (entity:KGEntity {kg_project: $project_id})
+        RETURN count(entity) AS entities
+      }
+      CALL {
+        MATCH ()-[relationship {kg_project: $project_id}]->()
+        RETURN count(relationship) AS relationships
+      }
+      RETURN entities, relationships;

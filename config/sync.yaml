@@ -1,0 +1,8 @@
+sync:
+  initialFullImport: true
+  incremental: true
+  compensation: true
+  manualResync: true
+
+  # ChangeEvent 只表示“哪个源记录变化”；业务事实必须回读权威源数据。
+  eventCarriesAuthoritativeData: false

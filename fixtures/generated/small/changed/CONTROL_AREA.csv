@@ -1,0 +1,3 @@
+controlAreaCode,controlAreaName,callSign,lowerLimit,upperLimit
+CTA001,模拟管制区1,CALL1,0,12000
+CTA002,模拟管制区2,CALL2,0,12000

@@ -1,0 +1,10 @@
+每日开发启动（Windows）
+
+1. cd /d D:\Data\项目代码\atm-knowledge-graph-baseline
+2. 设置 ATMKG_NEO4J_URI、ATMKG_NEO4J_DATABASE、ATMKG_NEO4J_USERNAME、ATMKG_NEO4J_PASSWORD
+3. set MAVEN_HOME=<你的 Maven 目录>
+4. tools\neo4j-dev.cmd start
+5. tools\service.cmd
+6. 打开 http://127.0.0.1:18080/viewer/
+
+service.cmd 在前台运行；使用期间不要关闭该窗口，也不要按 Ctrl+C。

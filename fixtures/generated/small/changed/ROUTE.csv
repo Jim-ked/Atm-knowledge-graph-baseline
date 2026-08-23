@@ -1,0 +1,4 @@
+routeCode,routeName,routeType,routeLowerLimit,routeUpperLimit
+R001,R001,TEST,3000,12000
+R002,R002,TEST,3000,12000
+R003,R003,TEST,3000,12000

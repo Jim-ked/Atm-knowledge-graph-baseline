@@ -1,0 +1,6 @@
+sources: []
+
+# 正式数据源接入后人工填写。
+# 每个 source 至少明确 sourceId、adapter、连接信息引用、源对象、稳定 sourceKey/业务主键。
+# 若用于增量补偿，再明确变更时间/水位字段或等价机制。
+# 具体航空字段语义不得写入 Java Core，应由 mapping/字段映射.xlsx 解释。

@@ -1,0 +1,4 @@
+reportingPointCode,reportingPointName,reportingPointType,reportingPointTypeName,latitude,longitude
+RPT001,模拟报告点1,RPT,非强制报告点,30.839727,96.199774
+RPT002,模拟报告点2,TRANS,管制移交点,31.981648,92.879482
+RPT003,模拟报告点3,RPT,非强制报告点,34.690374,110.348066

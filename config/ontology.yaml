@@ -1,0 +1,8 @@
+ontology:
+  file: ontology/atm_knowledge_graph.ttl
+  strictValidation: true
+
+mappingRefresh:
+  # 本体变化后仅补充新增的待映射项；不得覆盖人工已填写内容。
+  preserveExisting: true
+  newTermMarker: "[待映射]"

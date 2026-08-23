@@ -1,0 +1,10 @@
+/target/
+/.idea/
+/.vscode/
+*.iml
+*.log
+.env
+config/*.local.yaml
+releases/
+viewer/node_modules/
+viewer/test-results/

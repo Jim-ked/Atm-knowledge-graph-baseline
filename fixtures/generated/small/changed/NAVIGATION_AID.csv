@@ -1,0 +1,4 @@
+navigationAidCode,nameZh,nameEn,callSign,latitude,longitude,navigationAidType,frequencyKHz
+NAV001,模拟导航台1,NAV-A1,N001,23.751360,109.999840,DME,11025
+NAV002,模拟导航台2,NAV-A2,N002,28.859113,114.470860,VOR/DME,11050
+NAV003,模拟导航台3,NAV-A3,N003,30.768371,96.963351,DME,11075

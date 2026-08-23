@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>航管知识图谱 Viewer</title>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body data-debug="false">
+  <header class="topbar">
+    <div><p class="eyebrow">GRAPHDTO VIEWER</p><h1>航管知识图谱</h1></div>
+    <div id="status" class="status" role="status" aria-live="polite">准备就绪</div>
+  </header>
+
+  <main>
+    <section class="controls" aria-label="图查询">
+      <form id="query-form" class="control-group query-group">
+        <label>实体 UID <input id="uid" size="34" autocomplete="off"></label>
+        <button id="entity-query" type="button">查询实体</button>
+        <label>深度 <input id="depth" type="number" min="1" max="8" value="2"></label>
+        <button type="submit">查询 K-hop</button>
+      </form>
+      <form id="path-form" class="control-group path-query">
+        <label>路径起点 UID <input id="path-from" size="22" autocomplete="off"></label>
+        <label>终点 UID <input id="path-to" size="22" autocomplete="off"></label>
+        <label>最大深度 <input id="path-depth" type="number" min="1" max="8" value="6"></label>
+        <button type="submit">查询路径</button>
+      </form>
+      <div id="api-presets" class="control-group debug-block" data-debug-only hidden>
+        <span class="group-label">真实 API 快捷场景</span>
+        <button data-preset="z001">Z001 一跳</button>
+        <button data-preset="r001">R001 · K=2</button>
+        <button data-preset="as0001">AS0001 · K=2</button>
+      </div>
+      <div id="scale-controls" class="control-group debug-block" data-debug-only hidden>
+        <span class="group-label">固定 GraphDTO</span>
+        <button data-scale="100">100</button><button data-scale="500">500</button>
+        <button data-scale="1000">1000</button><button data-scale="1500">1500</button>
+      </div>
+    </section>
+
+    <section class="workspace">
+      <div class="viewer-panel">
+        <div class="viewer-toolbar">
+          <div class="display-controls" aria-label="显示方式">
+            <label>节点标签
+              <select id="node-label-mode">
+                <option value="AUTO" selected>自动</option><option value="INSIDE">节点内</option>
+                <option value="OUTSIDE">节点外</option><option value="HIDDEN">隐藏</option>
+              </select>
+            </label>
+            <label>关系标签
+              <select id="edge-label-mode">
+                <option value="AUTO" selected>自动</option><option value="VISIBLE">显示</option>
+                <option value="HIDDEN">隐藏</option>
+              </select>
+            </label>
+          </div>
+          <div class="graph-actions">
+            <button id="fit">适应画布</button><button id="rebalance">重新平衡</button>
+            <button id="clear">清空</button>
+          </div>
+        </div>
+        <details id="debug-panel" class="debug-panel debug-block" data-debug-only hidden open>
+          <summary>Debug Panel · 可替换内核与插件验证</summary>
+        <div id="engine-switch" class="engine-switch debug-block" role="group" aria-label="图形内核"
+             data-debug-only hidden>
+          <span class="group-label">Debug 内核</span>
+          <button data-engine="g6" aria-pressed="true">G6</button>
+          <button data-engine="cytoscape" aria-pressed="false">Cytoscape</button>
+          <button data-engine="sigma" aria-pressed="false">Sigma</button>
+          <button id="incremental">增量 add/update/remove</button>
+        </div>
+        <div id="sigma-workbench" class="sigma-workbench debug-block" data-debug-only hidden>
+          <strong>Sigma v3 Debug</strong>
+          <label>LayoutPolicy
+            <select id="sigma-layout-policy">
+              <option value="AUTO" selected>AUTO</option><option value="D3_TOPOLOGY_FORCE">D3 topology force</option>
+              <option value="GRAPHOLOGY_FORCE">Graphology Force (debug)</option>
+              <option value="FORCE_ATLAS2">ForceAtlas2 Worker</option>
+              <option value="NOVERLAP">Noverlap</option><option value="KEEP">Keep</option>
+            </select>
+          </label>
+          <button id="sigma-fit-neighborhood" type="button">适应邻域</button>
+          <span id="sigma-state" class="muted">Sigma v3 · Graphology</span>
+        </div>
+        <form id="g6-poc-controls" class="g6-poc-controls" aria-label="G6 Debug Workbench"
+              data-debug-only hidden>
+          <strong>G6 Debug Workbench</strong>
+          <label>视觉档位
+            <select id="g6-visual-preset"><option value="light">轻量</option>
+              <option value="balanced" selected>均衡</option><option value="readable">易读</option></select>
+          </label>
+          <label>拖后固定
+            <select id="g6-fixed"><option value="true">fixed=true</option><option value="false">fixed=false</option></select>
+          </label>
+          <button id="g6-unpin" type="button">解除固定</button>
+          <button id="g6-geometry-demo" type="button">临时关系几何示例</button>
+          <label>力参数参考
+            <select id="g6-force-preset"><option value="current">当前参数</option>
+              <option value="browser-reference">Browser 参考</option></select>
+          </label>
+          <label>重新加热
+            <select id="g6-restart-preset"><option value="browser-like">Browser-like · alpha=1</option>
+              <option value="gentle">Gentle · alpha=0.25</option></select>
+          </label>
+          <button id="g6-restart" type="button">应用并重新平衡</button>
+          <details><summary>实验力参数</summary>
+            <div class="force-fields">
+              <label>连线距离 <input id="g6-link-distance" type="number" min="40" max="240" value="100"></label>
+              <label>连线强度 <input id="g6-link-strength" type="number" min="0" max="1" step="0.05" value="0.55"></label>
+              <label>斥力 <input id="g6-many-body" type="number" min="-1500" max="-30" step="10" value="-160"></label>
+              <label>碰撞强度 <input id="g6-collide-strength" type="number" min="0" max="1" step="0.05" value="0.95"></label>
+              <label>碰撞迭代 <input id="g6-collide-iterations" type="number" min="1" max="6" value="3"></label>
+              <label>中心力 <input id="g6-center-strength" type="number" min="0" max="1" step="0.01" value="0.08"></label>
+              <button type="submit">应用并重新平衡</button>
+            </div>
+          </details>
+          <span id="g6-poc-state" class="muted">均衡 · visual node 40px</span>
+        </form>
+        <div id="cytoscape-workbench" class="cytoscape-workbench debug-block" data-debug-only hidden>
+          <strong>Cytoscape Debug</strong>
+          <label>LayoutPolicy
+            <select id="cytoscape-layout-policy">
+              <option value="AUTO" selected>AUTO</option><option value="FCOSE">fCoSE</option>
+              <option value="D3_FORCE">D3-force</option><option value="COLA">Cola</option>
+              <option value="ELK">ELK</option><option value="DAGRE">Dagre</option>
+              <option value="CISE">CiSE</option><option value="AVSDF">AVSDF</option>
+              <option value="SPREAD">Spread</option><option value="KEEP">Keep</option>
+            </select>
+          </label>
+          <button id="cytoscape-run-layout" type="button">运行布局</button>
+          <button id="cytoscape-fcose-probe" type="button">fCoSE constraints</button>
+          <button id="cytoscape-automove" type="button">Automove probe</button>
+          <button id="cytoscape-undo" type="button">Undo</button><button id="cytoscape-redo" type="button">Redo</button>
+          <span id="cytoscape-state" class="muted">Cytoscape 3.34.1</span>
+        </div>
+        </details>
+        <div id="graph" class="graph" aria-label="知识图谱画布"></div>
+        <div class="graph-footer"><span id="graph-summary">0 nodes · 0 relationships</span>
+          <span id="render-time" data-debug-only hidden>render —</span></div>
+      </div>
+
+      <aside class="details" aria-label="图元素详情">
+        <section>
+          <h2>详情</h2>
+          <div id="element-empty" class="muted">点击节点或关系查看完整属性</div>
+          <div id="node-empty" hidden></div>
+          <div id="node-detail" hidden>
+            <p class="detail-type">节点</p><h3 id="node-caption"></h3><dl id="node-fields"></dl>
+            <pre id="node-properties"></pre>
+            <div class="node-actions" aria-label="节点操作">
+              <button id="expand">展开一跳</button><button id="collapse">收起</button>
+              <button id="pin">固定</button><button id="unpin">解除固定</button>
+              <button id="hide-node">隐藏</button>
+            </div>
+          </div>
+          <div id="relationship-detail" hidden>
+            <p class="detail-type">关系</p><h3 id="relationship-type"></h3>
+            <dl id="relationship-fields"></dl><pre id="relationship-properties"></pre>
+          </div>
+        </section>
+        <section id="session-metrics" data-debug-only hidden>
+          <h2>Debug 会话比较</h2>
+          <table><thead><tr><th>内核</th><th>数据</th><th>渲染 ms</th></tr></thead><tbody id="metrics"></tbody></table>
+        </section>
+      </aside>
+    </section>
+  </main>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

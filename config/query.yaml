@@ -1,0 +1,7 @@
+query:
+  completeOneHop: true
+  completeKHop: true
+  completeReturnedSubgraph: true
+  explicitOverflowFailure: true
+
+  # 不允许随机抽样、top-N 或静默 LIMIT 改变查询语义。

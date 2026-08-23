@@ -1,0 +1,9 @@
+api:
+  host: "127.0.0.1"
+  port: 18080
+  basePath: "/api/v1"
+  schemaVersion: "1"
+  maxDepth: 8
+  maxRequestBytes: 65536
+  maxResultNodes: 10000
+  maxResultRelationships: 50000

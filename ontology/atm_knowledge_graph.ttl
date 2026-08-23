@@ -1,0 +1,221 @@
+@prefix atmkg: <urn:atm-knowledge-graph:> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<urn:atm-knowledge-graph:ontology> a owl:Ontology ;
+    rdfs:label "航管知识图谱本体"@zh-CN ;
+    rdfs:comment "基于已核定实际航空基础数据字段的本项目本体。本文件完整定义当前 TBox，不导入外部本体或历史版本，不包含数据实例、清洗执行、Neo4j 写入或三维推理。"@zh-CN .
+
+# Annotation Properties
+atmkg:sourceField a owl:AnnotationProperty ; rdfs:label "来源字段"@zh-CN ; rdfs:comment "记录本体元素所依据的实际源字段或源结构。"@zh-CN .
+atmkg:designRationale a owl:AnnotationProperty ; rdfs:label "设计理由"@zh-CN ; rdfs:comment "记录当前建模取舍，防止将未核定语义当成业务事实。"@zh-CN .
+atmkg:designStatus a owl:AnnotationProperty ; rdfs:label "设计状态"@zh-CN ; rdfs:comment "使用“已确认”、“待真实数据核验”或“后续推导”表示语义确定程度。"@zh-CN .
+
+# Classes
+atmkg:AviationBaseObject a owl:Class ;
+    rdfs:label "航空基础对象"@zh-CN ;
+    rdfs:comment "组织机场、跑道、导航台、报告点、航路、空域、管制区和飞行情报区等基础业务对象。"@zh-CN ;
+    atmkg:sourceField "已核定航空基础数据主表"@zh-CN ; atmkg:designRationale "仅作浅层组织，不统一异质业务语义。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:RouteSequence a owl:Class ;
+    rdfs:label "有序路线结构"@zh-CN ;
+    rdfs:comment "表示由顺序节点和相邻航段组成的结构，作为普通航路与班机航线共享节点/航段关系的中性上位类。"@zh-CN ;
+    atmkg:sourceField "普通航路与班机航线的顺序节点"@zh-CN ; atmkg:designRationale "共享结构而不将 ScheduledFlightRoute 等同于 Route。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:Airport a owl:Class ; rdfs:subClassOf atmkg:AviationBaseObject ;
+    rdfs:label "机场"@zh-CN ; rdfs:comment "四字码是当前主要稳定业务标识；airportCode 与 icaoCode 应一致，iataCode 可缺失。"@zh-CN ;
+    atmkg:sourceField "机场主表"@zh-CN ; atmkg:designRationale "忠实反映实际机场代码、类型、坐标和高度字段。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:Runway a owl:Class ; rdfs:subClassOf atmkg:AviationBaseObject ;
+    rdfs:label "跑道"@zh-CN ; rdfs:comment "表示物理跑道，长度和宽度属于物理跑道；CODE 包含机场四字码与双向跑道码。"@zh-CN ;
+    atmkg:sourceField "Runway CODE、长度、宽度、入口/出口字段"@zh-CN ; atmkg:designRationale "物理跑道与运行方向分层表达。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:RunwayDirection a owl:Class ;
+    rdfs:label "跑道方向"@zh-CN ; rdfs:comment "表示一个物理跑道的一个运行方向，当前只保存已核定的方向标识，不引入 RunwayEnd、Threshold 或 ReciprocalRunway。"@zh-CN ;
+    atmkg:sourceField "跑道方向标识"@zh-CN ; atmkg:designRationale "源数据明确区分同一物理跑道的两个方向。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:NavigationAid a owl:Class ; rdfs:subClassOf atmkg:AviationBaseObject ;
+    rdfs:label "导航台"@zh-CN ; rdfs:comment "表示 DME、NDB、VOR、TACAN、OTH、VOR/DME 或 VORTAC 类型的导航台，保存代码、名称、英文名、呼号、坐标和 kHz 频率。"@zh-CN ;
+    atmkg:sourceField "导航台主表"@zh-CN ; atmkg:designRationale "保持与报告点独立，不按坐标自动合并。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:ReportingPoint a owl:Class ; rdfs:subClassOf atmkg:AviationBaseObject ;
+    rdfs:label "报告点"@zh-CN ; rdfs:comment "表示源代码为 CRTP、IN-OUT、RPT 或 TRANS 的报告点，保留源代码与中文解释。"@zh-CN ;
+    atmkg:sourceField "报告点主表"@zh-CN ; atmkg:designRationale "保留源业务代码，不换成自造编码体系。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:Route a owl:Class ; rdfs:subClassOf atmkg:AviationBaseObject, atmkg:RouteSequence ;
+    rdfs:label "航路"@zh-CN ; rdfs:comment "表示普通基础航路，routeCode 与 routeName 当前一致，由顺序 RouteNode 和相邻 RouteSegment 组成。"@zh-CN ;
+    atmkg:sourceField "航路主表及节点子表"@zh-CN ; atmkg:designRationale "航路身份与有序结构分层表达。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:ScheduledFlightRoute a owl:Class ; rdfs:subClassOf atmkg:AviationBaseObject, atmkg:RouteSequence ;
+    rdfs:label "班机航线"@zh-CN ;
+    rdfs:comment "描述班机运行所采用的顺序路线及相关航行参数，但当前数据中不包含具体执行时间，因此不等同于具体航班或飞行计划实例。后续获得具体航班、飞行计划和时间数据后，可进一步建立与具体运行实例的关系。"@zh-CN ;
+    atmkg:sourceField "班机航线编号、名称、类型、顺序节点及疑似航段参数"@zh-CN ; atmkg:designRationale "独立表达运行路线数据，不提前建立 Flight/FlightPlan 体系。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:Airspace a owl:Class ; rdfs:subClassOf atmkg:AviationBaseObject ;
+    rdfs:label "空域"@zh-CN ; rdfs:comment "表示具有字符串编码、数字形式业务类型码、上下限和单一顺序 Polygon 几何的空域。"@zh-CN ;
+    atmkg:sourceField "空域主表与 Polygon 顺序点"@zh-CN ; atmkg:designRationale "使用代码与类型名属性，不将二十余种实际类型全部建为 OWL 子类。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:ControlArea a owl:Class ; rdfs:subClassOf atmkg:AviationBaseObject ;
+    rdfs:label "管制区"@zh-CN ; rdfs:comment "表示具有代码、名称、呼号和上下限的管制区；尚未核定的“所属”仍保留 Raw，不生成 managedBy/controlledBy/belongsTo。"@zh-CN ;
+    atmkg:sourceField "管制区主表"@zh-CN ; atmkg:designRationale "已确认字段正常建模，未确认所属语义保持 Raw。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:FlightInformationRegion a owl:Class ; rdfs:subClassOf atmkg:AviationBaseObject ;
+    rdfs:label "飞行情报区"@zh-CN ; rdfs:comment "表示实际情报区数据对象，完整保留四字码以及可能的 IFR/UR 后缀；后缀精确业务含义尚未核定。"@zh-CN ;
+    atmkg:sourceField "飞行情报区 code、upperLimit、lowerLimit"@zh-CN ; atmkg:designRationale "实际存在独立主表，不剪裁后缀或提前创建后缀类型。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:RouteStructureObject a owl:Class ;
+    rdfs:label "路线结构对象"@zh-CN ; rdfs:comment "组织有序路线中的节点和相邻航段，不表示独立基础设施。"@zh-CN ;
+    atmkg:sourceField "路线节点及相邻节点结构"@zh-CN ; atmkg:designRationale "将序列出现与可复用业务对象分离。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:RouteNode a owl:Class ; rdfs:subClassOf atmkg:RouteStructureObject ;
+    rdfs:label "路线节点"@zh-CN ; rdfs:comment "表示一个点在特定 Route 或 ScheduledFlightRoute 中的一次顺序出现，保留独立 nodeCode、nodeName、数字类型码和节点上下限。"@zh-CN ;
+    atmkg:sourceField "节点 sequence、code、name、type、upperLimit、lowerLimit"@zh-CN ; atmkg:designRationale "RouteNode 不等于基础对象，refersTo 不能仅依据坐标。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:RouteSegment a owl:Class ; rdfs:subClassOf atmkg:RouteStructureObject ;
+    rdfs:label "航段"@zh-CN ; rdfs:comment "表示相邻节点之间的连接，稳定 ID 可由 RouteSegment:{routeCode}:{fromSequence}-{toSequence} 生成；显示 label 可由起止节点名生成，不是源字段。"@zh-CN ;
+    atmkg:sourceField "相邻节点序列及经人工确认方向的节点附带航段字段"@zh-CN ; atmkg:designRationale "源数据无 segmentName，不虚构源名称。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:SpatialRepresentation a owl:Class ;
+    rdfs:label "空间表达对象"@zh-CN ; rdfs:comment "组织业务空间对象的几何表达，它本身不是航空业务对象。"@zh-CN ;
+    atmkg:sourceField "空域 Polygon 结构"@zh-CN ; atmkg:designRationale "分离业务身份与几何存储。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:AirspaceGeometry a owl:Class ; rdfs:subClassOf atmkg:SpatialRepresentation ;
+    rdfs:label "空域多边形"@zh-CN ; rdfs:comment "表示当前实际空域的单一 Polygon，由至少三个合法、sequence 唯一且完整的 BoundaryPoint 按序组成。"@zh-CN ;
+    atmkg:sourceField "空域 Polygon 顺序点"@zh-CN ; atmkg:designRationale "实际数据已确认全部为 Polygon。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:BoundaryPoint a owl:Class ; rdfs:subClassOf atmkg:SpatialRepresentation ;
+    rdfs:label "边界点"@zh-CN ; rdfs:comment "表示 Polygon 中一个有序坐标点；sequence 重复/缺失或坐标非法时几何必须保持未解析。"@zh-CN ;
+    atmkg:sourceField "Polygon 点 sequence、latitude、longitude"@zh-CN ; atmkg:designRationale "不自动补点、猜测顺序或与业务点合并。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+# Object Properties
+atmkg:hasRunway a owl:ObjectProperty ; rdfs:domain atmkg:Airport ; rdfs:range atmkg:Runway ;
+    rdfs:label "具有跑道"@zh-CN ; rdfs:comment "机场索引四字码与 Runway CODE 解析四字码一致时可自动建立；冲突或单一依据时留待人工检查。"@zh-CN ;
+    atmkg:sourceField "Airport 跑道索引 + Runway CODE 机场前缀"@zh-CN ; atmkg:designRationale "使用两套实际依据，禁止按最近坐标关联。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:hasDirection a owl:ObjectProperty ; rdfs:domain atmkg:Runway ; rdfs:range atmkg:RunwayDirection ;
+    rdfs:label "具有跑道方向"@zh-CN ; rdfs:comment "连接物理跑道与其两个运行方向。"@zh-CN ;
+    atmkg:sourceField "跑道方向标识"@zh-CN ; atmkg:designRationale "跑道长宽保留在 Runway，方向标识保留在 RunwayDirection。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:hasNode a owl:ObjectProperty ; rdfs:domain atmkg:RouteSequence ; rdfs:range atmkg:RouteNode ;
+    rdfs:label "具有节点"@zh-CN ; rdfs:comment "连接 Route 或 ScheduledFlightRoute 与其顺序节点。"@zh-CN ;
+    atmkg:sourceField "路线及节点子表"@zh-CN ; atmkg:designRationale "复用中性有序结构，不重复创建班机航线节点类。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:hasSegment a owl:ObjectProperty ; rdfs:domain atmkg:RouteSequence ; rdfs:range atmkg:RouteSegment ;
+    rdfs:label "具有航段"@zh-CN ; rdfs:comment "连接 Route 或 ScheduledFlightRoute 与由相邻节点生成的航段。"@zh-CN ;
+    atmkg:sourceField "相邻节点结构"@zh-CN ; atmkg:designRationale "源数据无 segmentName，航段身份由路线代码与起止 sequence 稳定生成。"@zh-CN ; atmkg:designStatus "后续推导"@zh-CN .
+
+atmkg:nextNode a owl:ObjectProperty ; rdfs:domain atmkg:RouteNode ; rdfs:range atmkg:RouteNode ;
+    rdfs:label "下一节点"@zh-CN ; rdfs:comment "根据同一路线中完整且唯一的 sequence 生成，序号缺失、重复或间断时不猜测。"@zh-CN ;
+    atmkg:sourceField "RouteNode sequence"@zh-CN ; atmkg:designRationale "显式相邻关系支持顺序查询。"@zh-CN ; atmkg:designStatus "后续推导"@zh-CN .
+
+atmkg:fromNode a owl:ObjectProperty ; rdfs:domain atmkg:RouteSegment ; rdfs:range atmkg:RouteNode ;
+    rdfs:label "起始节点"@zh-CN ; rdfs:comment "表示航段在 sequence 顺序中的起始节点。"@zh-CN ; atmkg:sourceField "相邻节点顺序"@zh-CN ; atmkg:designRationale "结构方向与节点附带字段方向分别处理。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:toNode a owl:ObjectProperty ; rdfs:domain atmkg:RouteSegment ; rdfs:range atmkg:RouteNode ;
+    rdfs:label "终止节点"@zh-CN ; rdfs:comment "表示航段在 sequence 顺序中的终止节点。"@zh-CN ; atmkg:sourceField "相邻节点顺序"@zh-CN ; atmkg:designRationale "结构方向与节点附带字段方向分别处理。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:refersTo a owl:ObjectProperty ; rdfs:domain atmkg:RouteNode ; rdfs:range atmkg:AviationBaseObject ;
+    rdfs:label "引用基础航空对象"@zh-CN ; rdfs:comment "在节点类型码已人工映射后，可按类型和代码/名称建立唯一匹配；机场、报告点/管制移交点、导航台分别指向对应主表。不能仅依据坐标。"@zh-CN ;
+    atmkg:sourceField "nodeTypeCode 人工码表 + nodeCode/nodeName + 基础对象主表"@zh-CN ; atmkg:designRationale "地标点、炮射点、航路点、障碍物无独立主表时不虚构实体。"@zh-CN ; atmkg:designStatus "待真实数据核验"@zh-CN .
+
+atmkg:hasGeometry a owl:ObjectProperty ; rdfs:domain atmkg:Airspace ; rdfs:range atmkg:AirspaceGeometry ;
+    rdfs:label "具有空域几何"@zh-CN ; rdfs:comment "连接空域业务对象与其单一 Polygon 几何。"@zh-CN ; atmkg:sourceField "空域与 Polygon 子结构"@zh-CN ; atmkg:designRationale "保持业务对象与几何表达分层。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:hasBoundaryPoint a owl:ObjectProperty ; rdfs:domain atmkg:AirspaceGeometry ; rdfs:range atmkg:BoundaryPoint ;
+    rdfs:label "具有边界点"@zh-CN ; rdfs:comment "连接 Polygon 与其按 sequence 排序的边界点。"@zh-CN ; atmkg:sourceField "Polygon 顺序点"@zh-CN ; atmkg:designRationale "坐标或顺序非法时不自动修补。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:locatedIn a owl:ObjectProperty ;
+    rdfs:label "位于"@zh-CN ; rdfs:comment "为未来空间计算结果保留的宽泛关系，本轮不执行推导。"@zh-CN ; atmkg:sourceField "后续空间计算"@zh-CN ; atmkg:designRationale "保留中性空间关系，供后续空间计算使用。"@zh-CN ; atmkg:designStatus "后续推导"@zh-CN .
+atmkg:crosses a owl:ObjectProperty ;
+    rdfs:label "穿越"@zh-CN ; rdfs:comment "为后续确实满足穿越语义的路线与空域/管制区结果保留，不由 touches/within 笼统聚合。"@zh-CN ; atmkg:sourceField "后续空间计算"@zh-CN ; atmkg:designRationale "保持精确业务语义。"@zh-CN ; atmkg:designStatus "后续推导"@zh-CN .
+
+# Datatype Properties: shared
+atmkg:nameZh a owl:DatatypeProperty ; rdfs:range xsd:string ; rdfs:label "中文名称"@zh-CN ; rdfs:comment "保存明确的中文名称。"@zh-CN ; atmkg:sourceField "nameZh"@zh-CN ; atmkg:designRationale "共享字段不设 domain，避免 OWL 交集推理副作用。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:nameEn a owl:DatatypeProperty ; rdfs:range xsd:string ; rdfs:label "英文名称"@zh-CN ; rdfs:comment "保存明确的英文名称。"@zh-CN ; atmkg:sourceField "nameEn"@zh-CN ; atmkg:designRationale "不从其他名称自动翻译。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:callSign a owl:DatatypeProperty ; rdfs:range xsd:string ; rdfs:label "呼号"@zh-CN ; rdfs:comment "保存导航台、报告点、空域或管制区的实际呼号字段。"@zh-CN ; atmkg:sourceField "callSign"@zh-CN ; atmkg:designRationale "已核定呼号进入正常字段。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:countryRegion a owl:DatatypeProperty ; rdfs:range xsd:string ; rdfs:label "国家地区"@zh-CN ; rdfs:comment "保留源国家/地区代码或经显式 alias 归一的值。"@zh-CN ; atmkg:sourceField "countryRegion"@zh-CN ; atmkg:designRationale "不由坐标反向猜测。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:latitude a owl:DatatypeProperty ; rdfs:range xsd:decimal ; rdfs:label "纬度"@zh-CN ; rdfs:comment "保存十进制度纬度，源字段可含 N/S 后缀。"@zh-CN ; atmkg:sourceField "latitude"@zh-CN ; atmkg:designRationale "实际坐标格式已核定，Raw 仍在清洗层保留。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:longitude a owl:DatatypeProperty ; rdfs:range xsd:decimal ; rdfs:label "经度"@zh-CN ; rdfs:comment "保存十进制度经度，源字段可含 E/W 后缀。"@zh-CN ; atmkg:sourceField "longitude"@zh-CN ; atmkg:designRationale "实际坐标格式已核定，坐标相同不导致实体合并。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:sequenceNumber a owl:DatatypeProperty ; rdfs:range xsd:integer ; rdfs:label "序号"@zh-CN ; rdfs:comment "保存 RouteNode 或 BoundaryPoint 的离散顺序。"@zh-CN ; atmkg:sourceField "sequence"@zh-CN ; atmkg:designRationale "重复、缺失或间断时不猜测。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+# Airport
+atmkg:airportCode a owl:DatatypeProperty ; rdfs:domain atmkg:Airport ; rdfs:range xsd:string ; rdfs:label "机场代码"@zh-CN ; rdfs:comment "当前与 ICAO 四字码一致，是主要稳定业务标识。"@zh-CN ; atmkg:sourceField "airportCode"@zh-CN ; atmkg:designRationale "保留实际字段名并与 icaoCode 做冲突检查。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:icaoCode a owl:DatatypeProperty ; rdfs:domain atmkg:Airport ; rdfs:range xsd:string ; rdfs:label "ICAO 四字码"@zh-CN ; rdfs:comment "机场四字码，当前应与 airportCode 一致。"@zh-CN ; atmkg:sourceField "icaoCode/四字码"@zh-CN ; atmkg:designRationale "不因一条冲突记录自动选择其中一个。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:iataCode a owl:DatatypeProperty ; rdfs:domain atmkg:Airport ; rdfs:range xsd:string ; rdfs:label "IATA 三字码"@zh-CN ; rdfs:comment "机场三字码，当前允许缺失。"@zh-CN ; atmkg:sourceField "iataCode/三字码"@zh-CN ; atmkg:designRationale "空值是合法数据，不报错。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:airportType a owl:DatatypeProperty ; rdfs:domain atmkg:Airport ; rdfs:range xsd:string ; rdfs:label "机场类型"@zh-CN ; rdfs:comment "当前实际值仅为民用和军民两用；新值留待人工 alias。"@zh-CN ; atmkg:sourceField "airportType"@zh-CN ; atmkg:designRationale "不预先加入未出现类型。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:airportGrade a owl:DatatypeProperty ; rdfs:domain atmkg:Airport ; rdfs:range xsd:string ; rdfs:label "机场等级"@zh-CN ; rdfs:comment "保存实际民航标准机场等级。"@zh-CN ; atmkg:sourceField "grade"@zh-CN ; atmkg:designRationale "保留业务编码，不当作数学数值。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:elevation a owl:DatatypeProperty ; rdfs:domain atmkg:Airport ; rdfs:range xsd:decimal ; rdfs:label "机场标高（m）"@zh-CN ; rdfs:comment "当前实际源数据单位为 m，按实际值保存，不转 ft、不取整。"@zh-CN ; atmkg:sourceField "elevation"@zh-CN ; atmkg:designRationale "高度值如 3596 原样保留精度。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:transitionAltitude a owl:DatatypeProperty ; rdfs:domain atmkg:Airport ; rdfs:range xsd:decimal ; rdfs:label "过渡高度（m）"@zh-CN ; rdfs:comment "当前实际源数据单位为 m，不转换为 ft 或 FL。"@zh-CN ; atmkg:sourceField "transitionAltitude"@zh-CN ; atmkg:designRationale "字段专用单位已核定。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:transitionLevel a owl:DatatypeProperty ; rdfs:domain atmkg:Airport ; rdfs:range xsd:decimal ; rdfs:label "过渡高度层（m）"@zh-CN ; rdfs:comment "当前实际数据中该字段单位也为 m，不根据名称自动转为 FL。"@zh-CN ; atmkg:sourceField "transitionLevel"@zh-CN ; atmkg:designRationale "忠实保存实际数据而非理论规则。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:magneticVariation a owl:DatatypeProperty ; rdfs:range xsd:string ; rdfs:label "磁差"@zh-CN ; rdfs:comment "保存实际民航数据中的磁差幅度和 E/W 方向。"@zh-CN ; atmkg:sourceField "magneticVariation"@zh-CN ; atmkg:designRationale "不在本体层强制单一文本格式。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+# Runway and direction
+atmkg:runwayCode a owl:DatatypeProperty ; rdfs:domain atmkg:Runway ; rdfs:range xsd:string ; rdfs:label "跑道 CODE"@zh-CN ; rdfs:comment "物理跑道代码，由机场四字码和双向跑道码组成。"@zh-CN ; atmkg:sourceField "Runway CODE"@zh-CN ; atmkg:designRationale "用于稳定标识与机场前缀交叉核验。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:length a owl:DatatypeProperty ; rdfs:domain atmkg:Runway ; rdfs:range xsd:decimal ; rdfs:label "跑道长度"@zh-CN ; rdfs:comment "保存物理跑道长度。"@zh-CN ; atmkg:sourceField "length"@zh-CN ; atmkg:designRationale "长度属于 Runway 而非单个方向。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:width a owl:DatatypeProperty ; rdfs:domain atmkg:Runway ; rdfs:range xsd:decimal ; rdfs:label "跑道宽度"@zh-CN ; rdfs:comment "保存物理跑道宽度。"@zh-CN ; atmkg:sourceField "width"@zh-CN ; atmkg:designRationale "宽度属于 Runway 而非单个方向。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:directionIdentifier a owl:DatatypeProperty ; rdfs:domain atmkg:RunwayDirection ; rdfs:range xsd:string ; rdfs:label "跑道方向标识"@zh-CN ; rdfs:comment "区分物理跑道的两个运行方向。"@zh-CN ; atmkg:sourceField "directionIdentifier"@zh-CN ; atmkg:designRationale "只建模已核定的方向标识。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:entryLatitude a owl:DatatypeProperty ; rdfs:domain atmkg:Runway ; rdfs:range xsd:string ; rdfs:label "跑道入口纬度 Raw"@zh-CN ; rdfs:comment "当前实际数据尚未完成方向字段归属核验，因此暂不迁移到 RunwayDirection。"@zh-CN ; atmkg:sourceField "entryLatitude"@zh-CN ; atmkg:designRationale "保守保留原 Runway 属性结构。"@zh-CN ; atmkg:designStatus "待真实数据核验"@zh-CN .
+atmkg:entryLongitude a owl:DatatypeProperty ; rdfs:domain atmkg:Runway ; rdfs:range xsd:string ; rdfs:label "跑道入口经度 Raw"@zh-CN ; rdfs:comment "当前实际数据尚未完成方向字段归属核验，因此暂不迁移。"@zh-CN ; atmkg:sourceField "entryLongitude"@zh-CN ; atmkg:designRationale "保守保留原 Runway 属性结构。"@zh-CN ; atmkg:designStatus "待真实数据核验"@zh-CN .
+atmkg:entryElevation a owl:DatatypeProperty ; rdfs:domain atmkg:Runway ; rdfs:range xsd:string ; rdfs:label "跑道入口高 Raw"@zh-CN ; rdfs:comment "当前实际数据尚未完成方向字段归属核验，因此暂不迁移。"@zh-CN ; atmkg:sourceField "entryElevation"@zh-CN ; atmkg:designRationale "保守保留原 Runway 属性结构。"@zh-CN ; atmkg:designStatus "待真实数据核验"@zh-CN .
+atmkg:exitLatitude a owl:DatatypeProperty ; rdfs:domain atmkg:Runway ; rdfs:range xsd:string ; rdfs:label "跑道出口纬度 Raw"@zh-CN ; rdfs:comment "当前实际数据尚未完成方向字段归属核验，因此暂不迁移。"@zh-CN ; atmkg:sourceField "exitLatitude"@zh-CN ; atmkg:designRationale "保守保留原 Runway 属性结构。"@zh-CN ; atmkg:designStatus "待真实数据核验"@zh-CN .
+atmkg:exitLongitude a owl:DatatypeProperty ; rdfs:domain atmkg:Runway ; rdfs:range xsd:string ; rdfs:label "跑道出口经度 Raw"@zh-CN ; rdfs:comment "当前实际数据尚未完成方向字段归属核验，因此暂不迁移。"@zh-CN ; atmkg:sourceField "exitLongitude"@zh-CN ; atmkg:designRationale "保守保留原 Runway 属性结构。"@zh-CN ; atmkg:designStatus "待真实数据核验"@zh-CN .
+atmkg:exitElevation a owl:DatatypeProperty ; rdfs:domain atmkg:Runway ; rdfs:range xsd:string ; rdfs:label "跑道出口高 Raw"@zh-CN ; rdfs:comment "当前实际数据尚未完成方向字段归属核验，因此暂不迁移。"@zh-CN ; atmkg:sourceField "exitElevation"@zh-CN ; atmkg:designRationale "保守保留原 Runway 属性结构。"@zh-CN ; atmkg:designStatus "待真实数据核验"@zh-CN .
+
+# NavigationAid and ReportingPoint
+atmkg:navigationAidCode a owl:DatatypeProperty ; rdfs:domain atmkg:NavigationAid ; rdfs:range xsd:string ; rdfs:label "导航台代码"@zh-CN ; rdfs:comment "保存导航台业务代码，当前 code 与 name 基本一致。"@zh-CN ; atmkg:sourceField "code"@zh-CN ; atmkg:designRationale "不由一致性推导 owl:sameAs。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:navigationAidType a owl:DatatypeProperty ; rdfs:domain atmkg:NavigationAid ; rdfs:range xsd:string ; rdfs:label "导航台类型"@zh-CN ; rdfs:comment "实际值域为 DME、NDB、VOR、TACAN、OH、VOR/DME、VORTAC。"@zh-CN ; atmkg:sourceField "type"@zh-CN ; atmkg:designRationale "VOR/DME 是正确源值，不为文字误写建立 alias。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:frequencyKHz a owl:DatatypeProperty ; rdfs:domain atmkg:NavigationAid ; rdfs:range xsd:decimal ; rdfs:label "导航台频率（kHz）"@zh-CN ; rdfs:comment "当前实际源数据中的导航台频率单位为 kHz。"@zh-CN ; atmkg:sourceField "frequency"@zh-CN ; atmkg:designRationale "显式使用字段名 frequencyKHz 防止单位混淆。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:isTerminalAreaPointRaw a owl:DatatypeProperty ; rdfs:domain atmkg:NavigationAid ; rdfs:range xsd:boolean ; rdfs:label "是否终端区点 Raw"@zh-CN ; rdfs:comment "保留未提升为稳定业务语义的源布尔值。"@zh-CN ; atmkg:sourceField "isTerminalAreaPoint"@zh-CN ; atmkg:designRationale "Raw 后缀防止提前推导。"@zh-CN ; atmkg:designStatus "待真实数据核验"@zh-CN .
+atmkg:isEnroutePointRaw a owl:DatatypeProperty ; rdfs:domain atmkg:NavigationAid ; rdfs:range xsd:boolean ; rdfs:label "是否航线上点 Raw"@zh-CN ; rdfs:comment "保留未提升为稳定业务语义的源布尔值。"@zh-CN ; atmkg:sourceField "isEnroutePoint"@zh-CN ; atmkg:designRationale "Raw 后缀防止提前推导。"@zh-CN ; atmkg:designStatus "待真实数据核验"@zh-CN .
+
+atmkg:reportingPointCode a owl:DatatypeProperty ; rdfs:domain atmkg:ReportingPoint ; rdfs:range xsd:string ; rdfs:label "报告点代码"@zh-CN ; rdfs:comment "当前 code、name 和 callSign 基本一致，仍分字段保留。"@zh-CN ; atmkg:sourceField "code"@zh-CN ; atmkg:designRationale "用于稳定标识和节点匹配。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:reportingPointType a owl:DatatypeProperty ; rdfs:domain atmkg:ReportingPoint ; rdfs:range xsd:string ; rdfs:label "报告点类型代码"@zh-CN ; rdfs:comment "保留 CRTP、IN-OUT、RPT、TRANS 源代码。"@zh-CN ; atmkg:sourceField "type"@zh-CN ; atmkg:designRationale "不替换成自造代码。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:reportingPointTypeName a owl:DatatypeProperty ; rdfs:domain atmkg:ReportingPoint ; rdfs:range xsd:string ; rdfs:label "报告点类型名称"@zh-CN ; rdfs:comment "保存源代码的中文解释：强制报告点、进出国境点、非强制报告点或管制移交点。"@zh-CN ; atmkg:sourceField "报告点类型索引"@zh-CN ; atmkg:designRationale "源代码与中文解释并存。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:reportingPointName a owl:DatatypeProperty ; rdfs:domain atmkg:ReportingPoint ; rdfs:range xsd:string ; rdfs:label "报告点名称"@zh-CN ; rdfs:comment "保存报告点名称。"@zh-CN ; atmkg:sourceField "name"@zh-CN ; atmkg:designRationale "不强制推断语言。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:isBorderHandoffPointRaw a owl:DatatypeProperty ; rdfs:domain atmkg:ReportingPoint ; rdfs:range xsd:boolean ; rdfs:label "是否国境交接点 Raw"@zh-CN ; rdfs:comment "保留源布尔标志供追溯。"@zh-CN ; atmkg:sourceField "isBoundaryHandover"@zh-CN ; atmkg:designRationale "不自动生成交接关系。"@zh-CN ; atmkg:designStatus "待真实数据核验"@zh-CN .
+atmkg:reportingPointGradeRaw a owl:DatatypeProperty ; rdfs:domain atmkg:ReportingPoint ; rdfs:range xsd:string ; rdfs:label "报告点等级 Raw"@zh-CN ; rdfs:comment "保留尚未核定精确体系的报告点等级。"@zh-CN ; atmkg:sourceField "grade"@zh-CN ; atmkg:designRationale "不提前建立分类。"@zh-CN ; atmkg:designStatus "待真实数据核验"@zh-CN .
+
+# Route and ScheduledFlightRoute shared fields
+atmkg:routeCode a owl:DatatypeProperty ; rdfs:domain atmkg:RouteSequence ; rdfs:range xsd:string ; rdfs:label "路线代码"@zh-CN ; rdfs:comment "保存普通航路或班机航线编号。"@zh-CN ; atmkg:sourceField "routeCode/班机航线编号"@zh-CN ; atmkg:designRationale "共享中性结构字段而不合并业务类。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:routeName a owl:DatatypeProperty ; rdfs:domain atmkg:RouteSequence ; rdfs:range xsd:string ; rdfs:label "路线名称"@zh-CN ; rdfs:comment "普通航路当前与 routeCode 一致；班机航线保留其独立名称字段。"@zh-CN ; atmkg:sourceField "routeName/班机航线名称"@zh-CN ; atmkg:designRationale "保留原始字段粒度。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:routeType a owl:DatatypeProperty ; rdfs:domain atmkg:RouteSequence ; rdfs:range xsd:string ; rdfs:label "路线类型"@zh-CN ; rdfs:comment "保存普通航路民航类型或班机航线类型的源值/显式 alias 值。"@zh-CN ; atmkg:sourceField "routeType"@zh-CN ; atmkg:designRationale "不由类型自动创建子类。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:routeUpperLimit a owl:DatatypeProperty ; rdfs:domain atmkg:Route ; rdfs:range xsd:string ; rdfs:label "航路整体上限"@zh-CN ; rdfs:comment "保存航路级上限，与 RouteNode 上限分离。"@zh-CN ; atmkg:sourceField "Route.upperLimit"@zh-CN ; atmkg:designRationale "避免层级混淆。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:routeLowerLimit a owl:DatatypeProperty ; rdfs:domain atmkg:Route ; rdfs:range xsd:string ; rdfs:label "航路整体下限"@zh-CN ; rdfs:comment "保存航路级下限，与 RouteNode 下限分离。"@zh-CN ; atmkg:sourceField "Route.lowerLimit"@zh-CN ; atmkg:designRationale "避免层级混淆。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:effectiveFrom a owl:DatatypeProperty ; rdfs:domain atmkg:Route ; rdfs:range xsd:string ; rdfs:label "起始有效期"@zh-CN ; rdfs:comment "保存普通航路起始有效日期原值或保守归一值。"@zh-CN ; atmkg:sourceField "effectiveFrom"@zh-CN ; atmkg:designRationale "不虚构时刻和时区。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:effectiveTo a owl:DatatypeProperty ; rdfs:domain atmkg:Route ; rdfs:range xsd:string ; rdfs:label "终止有效期"@zh-CN ; rdfs:comment "保存普通航路终止有效日期原值或保守归一值。"@zh-CN ; atmkg:sourceField "effectiveTo"@zh-CN ; atmkg:designRationale "不虚构时刻和时区。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+# RouteNode and RouteSegment
+atmkg:nodeCode a owl:DatatypeProperty ; rdfs:domain atmkg:RouteNode ; rdfs:range xsd:string ; rdfs:label "节点代码"@zh-CN ; rdfs:comment "保存完整节点代码；班机航线中的复合字符串不 split。"@zh-CN ; atmkg:sourceField "nodeCode"@zh-CN ; atmkg:designRationale "与 nodeName 分离保存。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:nodeName a owl:DatatypeProperty ; rdfs:domain atmkg:RouteNode ; rdfs:range xsd:string ; rdfs:label "节点名称"@zh-CN ; rdfs:comment "保存节点名称；班机航线默认使用该字段匹配基础点。"@zh-CN ; atmkg:sourceField "nodeName"@zh-CN ; atmkg:designRationale "实际数据证明 nodeCode 可与 nodeName 不同。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:nodeTypeCode a owl:DatatypeProperty ; rdfs:domain atmkg:RouteNode ; rdfs:range xsd:string ; rdfs:label "节点类型码"@zh-CN ; rdfs:comment "字符串保存实际数字形式业务码，不当作数学数值。"@zh-CN ; atmkg:sourceField "nodeType"@zh-CN ; atmkg:designRationale "具体码到名称尚待实际码表核定。"@zh-CN ; atmkg:designStatus "待真实数据核验"@zh-CN .
+atmkg:nodeTypeName a owl:DatatypeProperty ; rdfs:domain atmkg:RouteNode ; rdfs:range xsd:string ; rdfs:label "节点类型名称"@zh-CN ; rdfs:comment "人工码表核定后可保存机场、地标点、报告点、炮射点、管制移交点、航路点、导航台或障碍物。"@zh-CN ; atmkg:sourceField "节点类型代码索引"@zh-CN ; atmkg:designRationale "不根据列表顺序猜数字码。"@zh-CN ; atmkg:designStatus "待真实数据核验"@zh-CN .
+atmkg:nodeUpperLimit a owl:DatatypeProperty ; rdfs:domain atmkg:RouteNode ; rdfs:range xsd:string ; rdfs:label "节点上限"@zh-CN ; rdfs:comment "忠实保存实际 RouteNode 记录中的 upperLimit。"@zh-CN ; atmkg:sourceField "RouteNode.upperLimit"@zh-CN ; atmkg:designRationale "不直接改定为航段上限。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:nodeLowerLimit a owl:DatatypeProperty ; rdfs:domain atmkg:RouteNode ; rdfs:range xsd:string ; rdfs:label "节点下限"@zh-CN ; rdfs:comment "忠实保存实际 RouteNode 记录中的 lowerLimit。"@zh-CN ; atmkg:sourceField "RouteNode.lowerLimit"@zh-CN ; atmkg:designRationale "不直接改定为航段下限。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:magneticCourse a owl:DatatypeProperty ; rdfs:domain atmkg:RouteSegment ; rdfs:range xsd:decimal ; rdfs:label "磁航向"@zh-CN ; rdfs:comment "仅在人工确认节点附带字段方向后绑定到航段。"@zh-CN ; atmkg:sourceField "节点 magneticCourse"@zh-CN ; atmkg:designRationale "普通航路与班机航线的方向配置分开核定。"@zh-CN ; atmkg:designStatus "待真实数据核验"@zh-CN .
+atmkg:reverseMagneticCourse a owl:DatatypeProperty ; rdfs:domain atmkg:RouteSegment ; rdfs:range xsd:decimal ; rdfs:label "反向磁航向"@zh-CN ; rdfs:comment "仅在普通航路节点附带字段方向确认后绑定。"@zh-CN ; atmkg:sourceField "RouteNode.reverseMagneticCourse"@zh-CN ; atmkg:designRationale "不在方向 None 时生成航段值。"@zh-CN ; atmkg:designStatus "待真实数据核验"@zh-CN .
+atmkg:segmentUpperLimit a owl:DatatypeProperty ; rdfs:domain atmkg:RouteSegment ; rdfs:range xsd:string ; rdfs:label "航段上限"@zh-CN ; rdfs:comment "仅当具体源数据结构确认节点记录携带相邻航段限制时，才由 RouteNode 推导。"@zh-CN ; atmkg:sourceField "RouteNode.upperLimit（有条件推导）"@zh-CN ; atmkg:designRationale "保留兼容属性但不覆盖已确认的 nodeUpperLimit。"@zh-CN ; atmkg:designStatus "待真实数据核验"@zh-CN .
+atmkg:segmentLowerLimit a owl:DatatypeProperty ; rdfs:domain atmkg:RouteSegment ; rdfs:range xsd:string ; rdfs:label "航段下限"@zh-CN ; rdfs:comment "仅当具体源数据结构确认节点记录携带相邻航段限制时，才由 RouteNode 推导。"@zh-CN ; atmkg:sourceField "RouteNode.lowerLimit（有条件推导）"@zh-CN ; atmkg:designRationale "保留兼容属性但不覆盖已确认的 nodeLowerLimit。"@zh-CN ; atmkg:designStatus "待真实数据核验"@zh-CN .
+atmkg:segmentDistance a owl:DatatypeProperty ; rdfs:domain atmkg:RouteSegment ; rdfs:range xsd:decimal ; rdfs:label "航段距离"@zh-CN ; rdfs:comment "仅在人工确认节点附带字段方向后绑定。"@zh-CN ; atmkg:sourceField "节点 segmentDistance"@zh-CN ; atmkg:designRationale "班机航线末节点缺失该字段是合法的。"@zh-CN ; atmkg:designStatus "待真实数据核验"@zh-CN .
+atmkg:minimumSafeAltitude a owl:DatatypeProperty ; rdfs:domain atmkg:RouteSegment ; rdfs:range xsd:decimal ; rdfs:label "最低安全高度"@zh-CN ; rdfs:comment "班机航线非末节点存在而末节点缺失，高度疑似 CURRENT_TO_NEXT；人工核定前不绑定到航段。"@zh-CN ; atmkg:sourceField "ScheduledFlightRoute node.minimumSafeAltitude"@zh-CN ; atmkg:designRationale "保留明确的人工方向开关。"@zh-CN ; atmkg:designStatus "待真实数据核验"@zh-CN .
+atmkg:requiredNavigationPerformance a owl:DatatypeProperty ; rdfs:domain atmkg:RouteSegment ; rdfs:range xsd:string ; rdfs:label "所需性能导航"@zh-CN ; rdfs:comment "保存普通航路航段的 RNP 原值。"@zh-CN ; atmkg:sourceField "RouteNode.rnp（方向确认后）"@zh-CN ; atmkg:designRationale "不提前创建 RNP 分类体系。"@zh-CN ; atmkg:designStatus "待真实数据核验"@zh-CN .
+
+# Airspace
+atmkg:airspaceCode a owl:DatatypeProperty ; rdfs:domain atmkg:Airspace ; rdfs:range xsd:string ; rdfs:label "空域代码"@zh-CN ; rdfs:comment "保存字符串 airspaceCode。"@zh-CN ; atmkg:sourceField "airspaceCode"@zh-CN ; atmkg:designRationale "用于稳定标识和检索。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:airspaceName a owl:DatatypeProperty ; rdfs:domain atmkg:Airspace ; rdfs:range xsd:string ; rdfs:label "空域名称"@zh-CN ; rdfs:comment "保存空域名称。"@zh-CN ; atmkg:sourceField "name"@zh-CN ; atmkg:designRationale "不从名称反向猜测数字类型码。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:airspaceTypeCode a owl:DatatypeProperty ; rdfs:domain atmkg:Airspace ; rdfs:range xsd:string ; rdfs:label "空域类型码"@zh-CN ; rdfs:comment "字符串保存当前呈数字形式的业务代码，不当作 integer。"@zh-CN ; atmkg:sourceField "airspaceType"@zh-CN ; atmkg:designRationale "编码可含前导零，且没有数学运算语义。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:airspaceTypeName a owl:DatatypeProperty ; rdfs:domain atmkg:Airspace ; rdfs:range xsd:string ; rdfs:label "空域类型名称"@zh-CN ; rdfs:comment "保存经实际代码索引人工核定的类型名称，如进近管制区、终端管制区或训练飞行空域。"@zh-CN ; atmkg:sourceField "空域类型代码索引"@zh-CN ; atmkg:designRationale "具体数字到名称尚未核定，禁止按列表顺序猜测。"@zh-CN ; atmkg:designStatus "待真实数据核验"@zh-CN .
+atmkg:airspaceUpperLimit a owl:DatatypeProperty ; rdfs:domain atmkg:Airspace ; rdfs:range xsd:string ; rdfs:label "空域上限"@zh-CN ; rdfs:comment "保存实际空域 upperLimit。"@zh-CN ; atmkg:sourceField "upperLimit"@zh-CN ; atmkg:designRationale "与其他对象上限分开命名。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:airspaceLowerLimit a owl:DatatypeProperty ; rdfs:domain atmkg:Airspace ; rdfs:range xsd:string ; rdfs:label "空域下限"@zh-CN ; rdfs:comment "保存实际空域 lowerLimit。"@zh-CN ; atmkg:sourceField "lowerLimit"@zh-CN ; atmkg:designRationale "与其他对象下限分开命名。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:isEndRaw a owl:DatatypeProperty ; rdfs:domain atmkg:BoundaryPoint ; rdfs:range xsd:boolean ; rdfs:label "是否终点 Raw"@zh-CN ; rdfs:comment "保留原始终点标志；Polygon 组织以 sequence 为准。"@zh-CN ; atmkg:sourceField "isEnd"@zh-CN ; atmkg:designRationale "不用未核定标志自动拆分多部件几何。"@zh-CN ; atmkg:designStatus "待真实数据核验"@zh-CN .
+
+# ControlArea and FIR
+atmkg:controlAreaCode a owl:DatatypeProperty ; rdfs:domain atmkg:ControlArea ; rdfs:range xsd:string ; rdfs:label "管制区代码"@zh-CN ; rdfs:comment "保存管制区 code，当前与 name 一致。"@zh-CN ; atmkg:sourceField "code"@zh-CN ; atmkg:designRationale "用于稳定标识。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:controlAreaName a owl:DatatypeProperty ; rdfs:domain atmkg:ControlArea ; rdfs:range xsd:string ; rdfs:label "管制区名称"@zh-CN ; rdfs:comment "保存基本以管制单位命名的名称。"@zh-CN ; atmkg:sourceField "name"@zh-CN ; atmkg:designRationale "不从名称生成组织实体。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:controlAreaUpperLimit a owl:DatatypeProperty ; rdfs:domain atmkg:ControlArea ; rdfs:range xsd:string ; rdfs:label "管制区上限"@zh-CN ; rdfs:comment "保存 ControlArea upperLimit。"@zh-CN ; atmkg:sourceField "upperLimit"@zh-CN ; atmkg:designRationale "实际字段已核定。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:controlAreaLowerLimit a owl:DatatypeProperty ; rdfs:domain atmkg:ControlArea ; rdfs:range xsd:string ; rdfs:label "管制区下限"@zh-CN ; rdfs:comment "保存 ControlArea lowerLimit。"@zh-CN ; atmkg:sourceField "lowerLimit"@zh-CN ; atmkg:designRationale "实际字段已核定。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:sourceAffiliationRaw a owl:DatatypeProperty ; rdfs:domain atmkg:ControlArea ; rdfs:range xsd:string ; rdfs:label "源所属 Raw"@zh-CN ; rdfs:comment "保存尚未核定业务关系的“所属”字段。"@zh-CN ; atmkg:sourceField "所属"@zh-CN ; atmkg:designRationale "禁止自动生成 managedBy、controlledBy 或 belongsTo。"@zh-CN ; atmkg:designStatus "待真实数据核验"@zh-CN .
+atmkg:sourceCallSignRaw a owl:DatatypeProperty ; rdfs:domain atmkg:ControlArea ; rdfs:range xsd:string ; rdfs:label "源呼号 Raw"@zh-CN ; rdfs:comment "保留历史原始呼号字段以便追溯；当前实际数据使用 callSign。"@zh-CN ; atmkg:sourceField "呼号旧 Raw 字段"@zh-CN ; atmkg:designRationale "新老字段可追溯但不重复生成业务关系。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:flightInformationRegionCode a owl:DatatypeProperty ; rdfs:domain atmkg:FlightInformationRegion ; rdfs:range xsd:string ; rdfs:label "飞行情报区代码"@zh-CN ; rdfs:comment "完整保留 XXXX、XXXXIFR 或 XXXXUR 等源 code，不剪掉后缀。"@zh-CN ; atmkg:sourceField "code"@zh-CN ; atmkg:designRationale "IFR/UR 精确业务含义未确认，不创建后缀类型。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:firUpperLimit a owl:DatatypeProperty ; rdfs:domain atmkg:FlightInformationRegion ; rdfs:range xsd:string ; rdfs:label "飞行情报区上限"@zh-CN ; rdfs:comment "保存 FIR upperLimit。"@zh-CN ; atmkg:sourceField "upperLimit"@zh-CN ; atmkg:designRationale "实际字段已核定。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:firLowerLimit a owl:DatatypeProperty ; rdfs:domain atmkg:FlightInformationRegion ; rdfs:range xsd:string ; rdfs:label "飞行情报区下限"@zh-CN ; rdfs:comment "保存 FIR lowerLimit。"@zh-CN ; atmkg:sourceField "lowerLimit"@zh-CN ; atmkg:designRationale "实际字段已核定。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
