@@ -16,7 +16,8 @@ try {
   page.setDefaultTimeout(180_000);
   page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
   page.on('pageerror', error => pageErrors.push(error.message));
-  await page.goto(BASE, { waitUntil: 'networkidle' });
+  const gateUrl = `${BASE}${BASE.includes('?') ? '&' : '?'}gateRun=${Date.now()}`;
+  await page.goto(gateUrl, { waitUntil: 'networkidle' });
   await page.waitForFunction(() => window.__ATMKG_PHASE5__);
   await page.evaluate(() => window.__ATMKG_PHASE5__.switchEngine('cytoscape'));
 
@@ -147,8 +148,13 @@ try {
   require(automove.enabled === true, 'automove probe did not initialize');
 
   await page.evaluate(size => window.__ATMKG_PHASE5__.loadScale(size), 100);
-  results.plugins.large = await page.evaluate(() => window.__ATMKG_PHASE5__.cytoscapeDiagnostics().pluginDiagnostics);
+  results.plugins.large = await page.evaluate(() => {
+    const pluginDiagnostics = window.__ATMKG_PHASE5__.cytoscapeDiagnostics().pluginDiagnostics;
+    const thumbnail = document.querySelector('.cytoscape-navigator-container img');
+    return { ...pluginDiagnostics, navigatorThumbnail: Boolean(thumbnail?.src?.startsWith('data:image/png')) };
+  });
   require(results.plugins.large.navigator === true, 'navigator did not appear above threshold');
+  require(results.plugins.large.navigatorThumbnail === true, 'navigator thumbnail did not render in its container');
 
   const snapshot = await page.evaluate(() => window.__ATMKG_PHASE5__.model.snapshot());
   const viewerFields = (JSON.stringify(snapshot).match(/viewer|cytoscape|sigma|g6/gi) || []).length;

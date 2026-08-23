@@ -96,6 +96,11 @@ export function cytoscapeLayoutOptions(policy, cy, {
     ...common, name: 'd3-force', randomize: false, maxIterations: 100, maxSimulationTime: 850,
     // cytoscape-d3-force receives its own simulation node objects, not Cytoscape elements.
     // Keep the radius in the same visual-size scale as the shared viewer config.
+    // Cytoscape edge data stores source/target as stable semantic ids.  The
+    // plugin defaults to d3's numeric index accessor, which makes those
+    // strings fail with "node not found" as soon as a force layout starts.
+    // Explicitly resolve links by the copied simulation node `id` field.
+    linkId: node => node.id,
     collideRadius: 32,
     collideStrength: 0.85, linkDistance: 88, manyBodyStrength: -90, velocityDecay: 0.42
   };

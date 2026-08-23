@@ -71,7 +71,11 @@ function edgeGeometry(relationships) {
   }
   return annotated.map(edge => {
     const group = groups.get(relationPair(edge.source, edge.target));
-    return { ...edge, curveStep: (group.indexOf(edge) - (group.length - 1) / 2) * 44 };
+    // Cytoscape's `control-point-step-size` is a non-negative spacing value;
+    // the bezier renderer derives the side from the edge order/direction.
+    // Keep the geometry distinction while avoiding invalid negative style
+    // values for the first edge in a parallel group.
+    return { ...edge, curveStep: Math.abs((group.indexOf(edge) - (group.length - 1) / 2) * 44) };
   });
 }
 
@@ -147,7 +151,7 @@ export class CytoscapeAdapter extends ViewerAdapter {
           original: structuredClone(edge)
         } }))
       ],
-      style: this.#style(), boxSelectionEnabled: true, wheelSensitivity: 0.18,
+      style: this.#style(), boxSelectionEnabled: true,
       minZoom: 0.08, maxZoom: 6, selectionType: 'single'
     });
     this.#initPlugins();
@@ -376,9 +380,15 @@ export class CytoscapeAdapter extends ViewerAdapter {
     this.expandCollapseApi = this.cy.expandCollapse({ undoable: false, animate: false, fisheye: false, layoutBy: null });
     this.contextMenusApi = this.cy.contextMenus({ menuItems: this.#contextMenuItems() });
     if (this.cy.nodes().length > 50) {
-      this.navigatorContainer = document.createElement('div'); this.navigatorContainer.className = 'cytoscape-navigator-container';
+      this.navigatorContainer = document.createElement('div');
+      this.navigatorContainer.id = `cytoscape-navigator-${this.runtimeId}`;
+      this.navigatorContainer.className = 'cytoscape-navigator-container';
       this.container.parentElement?.append(this.navigatorContainer);
-      this.navigatorInstance = this.cy.navigator({ container: this.navigatorContainer, viewLiveFramerate: false, thumbnailEventFramerate: 30, rerenderDelay: 100 });
+      // cytoscape-navigator 2.x accepts a selector (not a DOM element) for
+      // `container`; passing the element silently creates a zero-sized panel
+      // on document.body.  Use the runtime-scoped id so the thumbnail is
+      // mounted in the sized debug container and remains isolated per runtime.
+      this.navigatorInstance = this.cy.navigator({ container: `#${this.navigatorContainer.id}`, viewLiveFramerate: false, thumbnailEventFramerate: 30, rerenderDelay: 100 });
     }
     this.pluginDiagnostics = {
       layoutUtilities: Boolean(this.layoutUtilitiesApi), viewUtilities: Boolean(this.viewUtilitiesApi), undoRedo: Boolean(this.undoRedoApi),
@@ -477,7 +487,7 @@ export class CytoscapeAdapter extends ViewerAdapter {
       const finish = () => { settled = true; resolve(); };
       this.activeLayout.one('layoutstop', finish);
       try { this.activeLayout.run(); } catch (error) { reject(error); return; }
-      if (effective === 'D3_FORCE' || effective === 'COLA' || effective === 'SPREAD') setTimeout(() => { if (!settled) { this.activeLayout.stop?.(); resolve(); } }, 2500);
+      setTimeout(() => { if (!settled) { this.activeLayout.stop?.(); resolve(); } }, effective === 'FCOSE' ? 15000 : 5000);
     }).catch(error => { this.technicalErrors.push(`${effective}: ${error.message}`); throw error; }).finally(() => { this.activeLayout = null; });
   }
 
@@ -490,8 +500,12 @@ export class CytoscapeAdapter extends ViewerAdapter {
       { selector: 'node.path', style: { 'border-color': '#e11d48', 'border-width': 2, 'z-index': 5 } },
       { selector: 'node.inactive', style: { opacity: 0.62, 'text-opacity': 0.55 } },
       { selector: 'node.hover', style: { 'border-color': '#0f172a', 'border-width': 2 } },
-      { selector: 'edge', style: { width: edge.width, 'line-color': '#94a3b8', 'line-opacity': edge.opacity, 'target-arrow-color': '#94a3b8', 'target-arrow-shape': 'triangle', 'arrow-scale': 0.75, 'curve-style': 'bezier', 'control-point-step-size': 'data(curveStep)', label: 'data(viewerLabel)', color: '#334155', 'font-size': edge.fontSize, 'font-weight': 400, 'text-rotation': 'autorotate', 'text-wrap': 'ellipsis', 'text-max-width': 90, 'text-overflow-wrap': 'whitespace', 'min-zoomed-font-size': 7, 'text-background-color': '#ffffff', 'text-background-opacity': 0.78, 'text-background-padding': 2, 'z-index-compare': 'manual', 'z-index': 0 } },
-      { selector: 'edge[geometryKind = "self-loop"]', style: { 'curve-style': 'loop', 'loop-direction': '0deg', 'loop-sweep': '90deg' } },
+      { selector: 'edge', style: { width: edge.width, 'line-color': '#94a3b8', 'line-opacity': edge.opacity, 'target-arrow-color': '#94a3b8', 'target-arrow-shape': 'triangle', 'arrow-scale': 0.75, 'curve-style': 'bezier', label: 'data(viewerLabel)', color: '#334155', 'font-size': edge.fontSize, 'font-weight': 400, 'text-rotation': 'autorotate', 'text-wrap': 'ellipsis', 'text-max-width': 90, 'text-overflow-wrap': 'whitespace', 'min-zoomed-font-size': 7, 'text-background-color': '#ffffff', 'text-background-opacity': 0.78, 'text-background-padding': 2, 'z-index-compare': 'manual', 'z-index': 0 } },
+      { selector: 'edge[curveStep]', style: { 'control-point-step-size': 'data(curveStep)' } },
+      // Cytoscape models self-loops with bezier loop geometry; `loop` is not
+      // a valid curve-style value in Cytoscape 3.34 and only produces a
+      // console warning (the dedicated loop direction/sweep still apply).
+      { selector: 'edge[geometryKind = "self-loop"]', style: { 'curve-style': 'bezier', 'loop-direction': '0deg', 'loop-sweep': '90deg' } },
       { selector: 'edge.selected, edge.related', style: { width: edge.selectedWidth, 'line-opacity': 0.78, 'line-color': '#0284c7', 'target-arrow-color': '#0284c7', 'z-index': 5 } },
       { selector: 'edge.path', style: { width: edge.pathWidth, 'line-opacity': 0.72, 'line-color': '#e11d48', 'target-arrow-color': '#e11d48', 'z-index': 4 } },
       { selector: 'edge.inactive', style: { 'line-opacity': 0.18, 'text-opacity': 0.18 } }
