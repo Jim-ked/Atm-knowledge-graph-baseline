@@ -28,13 +28,13 @@ import org.atmkg.core.spi.SourceAdapter;
 import org.atmkg.infra.source.config.ConfiguredSource;
 
 /**
- * XLSX 物理读取边界。
+ * 新增 XLSX、Sheet、表头字段或同结构多文件时不要改本类；在 {@code config/sources.yaml} 的 Excel
+ * source.objects 下复制 object，填写 files/sheet/headerRow/keyFields/recordMode。先用
+ * {@code tools\source-preview.cmd config\sources.yaml <sourceId> <object> 5} 验证。
  *
- * <p>它不知道 Airport、Route、Airspace 等航空语义，只按 sources.yaml 指定的文件模式、Sheet、
- * 主键字段和通用行组装规则产生 SourceRecord。业务字段如何映射到 TTL 仍由 mapping/字段映射.xlsx 决定。
- *
- * <p>同一 objectName 可以匹配多个同结构工作簿；文件名不参与 sourceKey。ADJACENT_NEXT 模式仅表示
- * “同组当前行 + 下一行”这种通用二维表结构，末行没有 next 时不产生记录。
+ * <p>只有要改变 ROW/GROUP_FIRST/ADJACENT_NEXT 的通用组装、XLSX 类型读取或 glob 机制才写 Java。
+ * 加航空类判断会破坏 SourceAdapter 物理边界；把文件名放进 sourceKey 会破坏跨文件稳定身份。
+ * 记录数/字段错先看 source-preview 的实际匹配文件和 Sheet，再查 headerRow/keyFields/groupBy/orderBy。
  */
 public final class ExcelSourceAdapter implements SourceAdapter {
     private static final String ADAPTER = "excel";

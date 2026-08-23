@@ -10,10 +10,13 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * sources.yaml 的最小加载器。
+ * 新增 Excel/JDBC source 时只编辑 {@code config/sources.yaml}：复制一个 {@code - sourceId} 块，
+ * 填 adapter 和 objects，不需要修改本类。这里仅解析 sourceId/adapter 并保留整个 JsonNode；
+ * files/sheet 由 ExcelSourceAdapter 校验，table/view 由 JdbcSourceAdapter 校验。
  *
- * <p>本类只识别 sourceId 与 adapter；root、objects、table、sheet 等 adapter 专属字段原样交给
- * 对应 SourceAdapter 解释，从而避免把 Excel/JDBC/JSON/CSV 的物理细节带入 Core。
+ * <p>只有所有 adapter 共享的顶层 schema 需要新增必填字段时才改 Java。把业务字段或本体 IRI 加到这里会
+ * 让物理读取层耦合业务语义。报“缺少 sources 数组/重复 sourceId”查本类和 YAML 顶层；报 object 字段错误
+ * 去对应 Adapter。
  */
 public final class SourceConfig {
     private final Map<String, ConfiguredSource> sources;

@@ -29,7 +29,16 @@ import org.neo4j.driver.Session;
 import org.neo4j.driver.SessionConfig;
 import org.neo4j.driver.TransactionContext;
 
-/** Neo4j projection with one technical entity label and ontology-derived labels/types. */
+/**
+ * 新增本体字段/类/关系或源表不要修改本类：分别改 TTL、{@code mapping/字段映射.xlsx} 和
+ * {@code config/sources.yaml}。只有 Neo4j schema、replaceProjection 事务或 contribution 合并机制变化
+ * 才进入这里写 Java。
+ *
+ * <p>KGEntityContribution 按 (entityUid, SourceRef) 保存属性证据，再重建 canonical KGEntity；它不能进入
+ * Query/GraphDTO/Viewer/业务统计。同属性不同值必须冲突回滚，改成“最后写入覆盖”会让结果依赖同步顺序。
+ * 写图失败先查 contribution 属性冲突、provenance 是否等于 replaceProjection SourceRef、关系端点是否存在。
+ * 实体 contribution 已支持；多来源关系 ownership 尚未实现。
+ */
 public final class Neo4jGraphStore implements GraphStore {
     static final String ENTITY_LABEL = "KGEntity";
     static final String ENTITY_CONTRIBUTION_LABEL = "KGEntityContribution";

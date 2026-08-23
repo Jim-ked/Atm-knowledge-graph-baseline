@@ -1,20 +1,25 @@
+# 正式接入第一个数据源时，把 sources: [] 替换为下面某个示例；已有 source 时在数组下追加完整
+# “- sourceId”块。sourceId 和 objects 下的键必须逐字复制到 mapping/字段映射.xlsx。
+# 修改 Excel 后先执行：
+# tools\source-preview.cmd config\sources.yaml <sourceId> <sourceObject> 5
+# 确认 SourceRecord 后再改 mapping，最后执行 tools\sync.cmd。这里不填写本体 IRI、UID规则或密码。
 sources: []
 
 # 正式数据源接入后人工填写。这里仅描述“物理上去哪里读、怎样形成 SourceRecord”，
 # 具体航空字段、本体类、属性和关系语义仍由 mapping/字段映射.xlsx 维护。
 #
-# Excel 示例（保持注释，不代表当前正式源）：
+# Excel 示例（当前仍是注释，不会被运行时读取）。接入时取消整个 source 块的注释：
 # sources:
-#   - sourceId: excel-main
-#     adapter: excel
-#     root: data/excel
+#   - sourceId: excel-main        # 自定义稳定标识；mapping 的 sourceId 列写 excel-main
+#     adapter: excel              # 固定写 excel
+#     root: data/excel            # 相对项目根目录；files 从这里匹配
 #     objects:
-#       airspace-base:
-#         files: "空域*.xlsx"       # 同结构文件可一次匹配多个
-#         sheet: 1                  # 可写从 1 开始的序号，也可直接写 Sheet 名称
-#         headerRow: 1
-#         keyFields: ["空域ID"]     # 仅用于稳定 SourceRecord.sourceKey，不决定本体 UID 语义
-#         recordMode: row
+#       airspace-base:             # sourceObject；mapping 的“源对象/源记录类型”写这个键
+#         files: "空域*.xlsx"      # 同结构文件一次匹配多个，不为每个文件复制配置
+#         sheet: 1                 # 从 1 开始的序号；也可直接写 Sheet 名“空域主表”
+#         headerRow: 1             # 从 1 开始的表头行
+#         keyFields: ["空域ID"]    # 表头字段；按顺序组成 SourceRecord.sourceKey
+#         recordMode: row          # 每个有效行生成一条记录
 #       airspace-boundary:
 #         files: "空域*.xlsx"
 #         sheet: 2
@@ -26,27 +31,28 @@ sources: []
 #         sheet: 1
 #         headerRow: 1
 #         keyFields: ["航线ID", "序号"]
-#         recordMode: adjacent_next
-#         groupBy: ["航线ID"]
-#         orderBy: "序号"
+#         recordMode: adjacent_next # 同组当前行+下一行；组末行不生成
+#         groupBy: ["航线ID"]       # 先按这些表头字段分组
+#         orderBy: "序号"           # 组内排序字段；重复顺序值会失败
 #
 # ADJACENT_NEXT 会把当前行字段保留在顶层，同时提供 current.<字段> 与 next.<字段>；
 # 最后一行没有 next 时不产生记录。Adapter 还会加入 __sourceKey 供确需复合业务键的映射使用。
 #
-# JDBC 示例（保持注释，不代表当前正式源）：
+# JDBC 示例（当前仍是注释）。新增表时通常只在同一个 jdbc-main 的 objects 下追加 object；
+# 不要为同一数据库每张表复制 driver/url/账号环境变量：
 # sources:
-#   - sourceId: jdbc-main
-#     adapter: jdbc
+#   - sourceId: jdbc-main            # mapping 的 sourceId 列写 jdbc-main
+#     adapter: jdbc                  # 固定写 jdbc；不要写 mysql
 #     driver: com.mysql.cj.jdbc.Driver
 #     url: jdbc:mysql://db-host:3306/atm?useUnicode=true&characterEncoding=UTF-8&useCursorFetch=true
-#     usernameEnv: ATMKG_JDBC_USERNAME
-#     passwordEnv: ATMKG_JDBC_PASSWORD
-#     fetchSize: 500
+#     usernameEnv: ATMKG_JDBC_USERNAME # 值是环境变量名，不是用户名
+#     passwordEnv: ATMKG_JDBC_PASSWORD # 值是环境变量名，不是密码
+#     fetchSize: 500                 # 可选，默认 500
 #     objects:
-#       route-row:
-#         table: atm_route_rows       # 也可改为 view: current_route_rows；二者只能配置一个
-#         keyFields: [route_id, sequence_no]
-#         watermarkField: updated_at  # 可选；配置后才能使用 scanChangedSince
+#       route-row:                    # sourceObject；mapping 和 sync polling scope 引用这个键
+#         table: atm_route_rows       # 与 view 二选一；视图写 view: current_route_rows
+#         keyFields: [route_id, sequence_no] # 稳定、非空、唯一业务键列
+#         watermarkField: updated_at  # 可选时间列；配置后才可 scanChangedSince/polling
 #
 # JDBC 只允许读取受控配置中的简单表/视图和字段标识符，不接受运行时 SQL。
 # CSV / JSON 后续仍沿用同一 sourceId + objectName + sourceKey 边界；

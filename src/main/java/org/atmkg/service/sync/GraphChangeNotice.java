@@ -8,8 +8,12 @@ import org.atmkg.core.model.MappingResult;
 import org.atmkg.core.model.SourceRef;
 
 /**
- * Application-level notice that a source record's change has already been committed to the graph projection.
- * This is deliberately separate from the source-side ChangeEvent discovery signal.
+ * 新增源字段/表/mapping 不改本类。只有“成功写图后通知”的应用契约变化才进入这里；源侧发现信息仍放
+ * ChangeEvent。entityUids/relationshipUids/anchorEntityUids 必须直接来自已提交 MappingResult。
+ *
+ * <p>从 QueryService/GraphStore 再猜 anchor 会让通知与本次提交不一致；GraphStore 失败前发布会产生假成功。
+ * notice 缺失先查 DefaultSyncService listener 是否在 replaceProjection 后调用。DELETE 当前无 before-state，
+ * entity/relationship/anchor 均为空，不能在这里虚构历史 UID。
  */
 public final class GraphChangeNotice {
     public enum Operation { UPSERT, DELETE }

@@ -4,10 +4,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.util.Objects;
 
 /**
- * 一个已解析的数据源定义。
+ * 普通需求不改此值对象。新增表/文件去 {@code config/sources.yaml}，新增字段语义去
+ * {@code mapping/字段映射.xlsx}，新增本体术语去正式 TTL。
  *
- * <p>这里只保存物理接入信息：sourceId、adapter 以及该 adapter 自己的配置节点。
- * 航空业务字段、本体类和关系语义不得放到这里；它们仍由 mapping/字段映射.xlsx 解释。
+ * <p>只有 SourceConfig 与 Adapter 之间必须传递新的“所有 adapter 共用”信息时才考虑修改。不要给它增加
+ * Airport/Route/Airspace 字段；误加会形成第二套 mapping。配置值不对先看 SourceConfig 加载的原始 JsonNode。
  */
 public final class ConfiguredSource {
     private final String sourceId;

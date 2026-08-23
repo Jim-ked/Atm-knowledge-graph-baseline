@@ -11,7 +11,14 @@ import org.atmkg.core.model.QuerySpec;
 import org.atmkg.core.spi.QueryService;
 import org.atmkg.service.sync.GraphChangeNotice;
 
-/** Applies configured named association queries, with at most one continuation from first-level results. */
+/**
+ * 新增 kind→query 选择只改 {@code queries/change-query-rules.yaml}，新增 query 去
+ * {@code queries/query-templates.yaml}；不要在本类加入 RouteSegment/PlannedFlightRoute if。
+ *
+ * <p>只有“anchor ENTITY 查询→规则查询→最多一次 continuation”的通用流程有缺陷才写 Java。去掉一次上限
+ * 会把它变成未设计的递归推理器；为 DELETE 猜历史会伪造影响对象。独立测试成功但 service 无输出是因为
+ * 本类尚未装配进 KgServiceMain/SyncRuntime，也没有 outward sink。
+ */
 public final class GraphChangeAssociationProjector {
     private final QueryService queryService;
     private final ChangeQueryRuleRegistry rules;

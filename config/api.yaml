@@ -1,9 +1,13 @@
 api:
-  host: "127.0.0.1"
-  port: 18080
-  basePath: "/api/v1"
-  schemaVersion: "1"
-  maxDepth: 8
-  maxRequestBytes: 65536
-  maxResultNodes: 10000
-  maxResultRelationships: 50000
+  host: "127.0.0.1"          # HTTP 绑定地址；环境变量 ATMKG_API_HOST 可覆盖
+  port: 18080                # HTTP 端口；环境变量 ATMKG_API_PORT 可覆盖
+  basePath: "/api/v1"        # health 实际为 <basePath>/health；必须以 / 开头
+  schemaVersion: "1"         # 写入 GraphDTO.schemaVersion，不是 TTL 版本
+  maxDepth: 8                # API 接受的 K-hop/path 最大 depth
+  maxRequestBytes: 65536     # JSON 请求体字节上限
+  maxResultNodes: 10000      # GraphDTO 超过此节点数时显式失败，不截断
+  maxResultRelationships: 50000 # GraphDTO 超过此关系数时显式失败，不截断
+
+# 修改后重启 tools\service.cmd，并按新 host/port/basePath 请求：
+# curl http://127.0.0.1:18080/api/v1/health
+# Viewer 静态路径固定为 /viewer/，不由 basePath 控制。未知字段会导致 ApiConfig 加载失败。

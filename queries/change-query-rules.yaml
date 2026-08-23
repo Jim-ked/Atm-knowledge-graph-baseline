@@ -1,3 +1,6 @@
+# 左侧键必须是 API GraphDTO 节点或 Viewer 详情中实际看到的 GraphNodeDTO.kind，例如 RouteSegment；
+# 它不是 config/sources.yaml 的 table、sourceId 或 sourceObject。右侧每个 queryId 必须先存在于
+# queries/query-templates.yaml。一个 kind 需要多个查询时继续增加 “- queryId” 行。
 associations:
   Airport:
     - airport-direct-flights
@@ -5,3 +8,15 @@ associations:
     - segment-route-structures
   PlannedFlightRoute:
     - planned-route-flights
+
+# 假设以后 GraphDTO 实际出现 kind=NavPoint，且 query-templates.yaml 已定义两个 queryId，写法是：
+#   NavPoint:
+#     - navpoint-neighbors
+#     - navpoint-routes
+#
+# 修改后执行：
+# mvn.cmd -Dtest=ChangeQueryRuleRegistryTest,GraphChangeAssociationProjectorTest test
+#
+# 当前 KgServiceMain/SyncRuntime 没有加载本文件，也没有 outward sink；因此测试通过后运行
+# tools\service.cmd 仍不会自动执行或推送关联结果。正式自动生效需要后续把
+# ChangeQueryRuleRegistry + GraphChangeAssociationProjector 接入运行时，本轮不要用更多 YAML 代替该工作。

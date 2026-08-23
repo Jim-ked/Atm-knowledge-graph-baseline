@@ -8,7 +8,14 @@ import org.atmkg.core.model.mapping.EntityMappingSpec;
 import org.atmkg.core.model.mapping.RelationshipMappingSpec;
 import org.atmkg.core.spi.IdentityResolver;
 
-/** Deterministic, readable identity generation without Neo4j internal IDs or cryptographic hashes. */
+/**
+ * 新增实体/表/文件时不要修改本类。在 {@code mapping/字段映射.xlsx} 的“业务主键”选择稳定语义字段，
+ * “UID规则”使用现有 class-local-business-key；物理读取键在 {@code config/sources.yaml keyFields} 配置。
+ *
+ * <p>只有经过全图迁移设计的 namespace/UID 编码算法变化才写 Java。把文件名、路径、table、Sheet、行号或
+ * Neo4j internal ID 加入算法，会让同一业务对象跨部署变 UID，并使已有关系端点失配。UID 不稳定先比较两次
+ * MappingResult 的 businessKey/classIri，再查装配 namespace，不要先改编码函数。
+ */
 public final class DeterministicIdentityResolver implements IdentityResolver {
     private final String namespace;
 

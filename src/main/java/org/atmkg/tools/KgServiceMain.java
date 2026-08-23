@@ -15,7 +15,16 @@ import org.atmkg.service.query.TemplateAwareQueryService;
 import org.atmkg.service.sync.SyncRuntime;
 import org.neo4j.driver.Driver;
 
-/** Development service assembly; Core and QueryService remain independent of the HTTP runtime. */
+/**
+ * 服务启动/关闭顺序出问题时才改这里。新增源表去 {@code config/sources.yaml}，新增本体字段去
+ * {@code ontology/atm_knowledge_graph.ttl + mapping/字段映射.xlsx}，新增 named query 去
+ * {@code queries/query-templates.yaml}；这些需求都不应修改本类。
+ *
+ * <p>本类固定加载 {@code config/api.yaml}、正式 TTL 和 {@code queries/query-templates.yaml}，再装配
+ * HTTP/Viewer/SyncRuntime。只有要正式接入新的进程级组件、改变这些固定路径或修复资源关闭顺序才写 Java。
+ * 误把 sources.local/fixture 或 GraphChangeAssociationProjector 接进来会改变生产入口；后者当前没有
+ * outward sink。启动失败先看控制台发生在 Driver、SyncRuntimeAssembler 还是 server.start。
+ */
 public final class KgServiceMain {
     private KgServiceMain() {}
 

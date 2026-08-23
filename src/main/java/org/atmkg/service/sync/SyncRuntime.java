@@ -4,7 +4,14 @@ import java.util.Objects;
 import org.atmkg.core.spi.SyncService;
 import org.atmkg.core.spi.TriggerAdapter;
 
-/** Owns the optional synchronization lifecycle without changing the Core synchronization contracts. */
+/**
+ * 只在 polling 启停、重复 start/close 或失败清理有缺陷时改这里。调整 interval/scope 去
+ * {@code config/sync.yaml}，新增表去 {@code config/sources.yaml}，人工同步动作由 SyncControlMain 负责。
+ *
+ * <p>本类只把 TriggerAdapter 事件交给 {@code syncService::handle}，并保证 close 时 stop。不要在这里实现
+ * initial full rebuild 或 watermark 持久化。服务退出后 polling 仍运行时，先查 KgServiceMain 的 close 顺序、
+ * 本类 pollingStarted，再查 JdbcPollingTriggerAdapter.stop。
+ */
 public final class SyncRuntime implements AutoCloseable {
     private final SyncService syncService;
     private final TriggerAdapter pollingTrigger;

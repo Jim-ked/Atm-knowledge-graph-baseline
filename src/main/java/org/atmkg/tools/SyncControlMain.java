@@ -23,7 +23,15 @@ import org.atmkg.infra.source.config.ConfiguredSource;
 import org.atmkg.service.sync.SyncRuntimeConfig;
 import org.neo4j.driver.Driver;
 
-/** Small operator-facing entry point for explicit synchronization actions. */
+/**
+ * 新增 source、字段或 polling scope 不改菜单代码，分别编辑 {@code config/sources.yaml}、
+ * {@code mapping/字段映射.xlsx}、{@code config/sync.yaml}。本工具固定只读正式配置，不得加入
+ * sources.local/fixture fallback。
+ *
+ * <p>只有人工提示、菜单选择或既有 SyncService 方法调用有缺陷时才写 Java。删除 fullRebuild 明确确认会造成
+ * 误清图；打印 raw ConfiguredSource 会泄露 JDBC URL/环境变量信息。本工具只读源数据但写 Neo4j，不提供 HTTP。
+ * 菜单没有入口时先查 SyncRuntimeAssembler.plan 是否从正式 sources 解析到 objects。
+ */
 public final class SyncControlMain {
     private SyncControlMain() {}
 

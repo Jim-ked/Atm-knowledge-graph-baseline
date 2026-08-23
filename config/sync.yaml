@@ -1,15 +1,27 @@
 sync:
+  # 下面四项当前会被解析，但不会自动执行/禁止 sync.cmd 菜单。尤其 true 不代表服务启动时重建图。
   initialFullImport: true
-  incremental: true
+  incremental: true  # polling.enabled=true 时本项必须为 true
   compensation: true
   manualResync: true
 
   # ChangeEvent 只表示“哪个源记录变化”；业务事实必须回读权威源数据。
+  # 代码要求固定为 false，改成 true 会启动失败。
   eventCarriesAuthoritativeData: false
 
-  # initialFullImport 是能力/策略标记；服务启动不会自动 clearProject/fullRebuild。
   polling:
-    enabled: false
-    intervalSeconds: 30
-    # 启用后每项必须显式配置 sourceId、sourceObject、initialWatermark。
+    enabled: false       # 改 true 才启动 JdbcPollingTriggerAdapter
+    intervalSeconds: 30  # 每轮结束后等待秒数，必须为正整数
+    # 启用时复制下面三行。sourceId/sourceObject 必须引用 config/sources.yaml 中 adapter=jdbc
+    # 的 sourceId 和 objects 键；该 object 还必须配置 watermarkField。
+    # initialWatermark 必须是人工确认的 ISO-8601 UTC 起点，不能用当前时间兜底。
     scopes: []
+    # scopes:
+    #   - sourceId: jdbc-main
+    #     sourceObject: route-row
+    #     initialWatermark: "2026-08-24T00:00:00Z"
+
+# 修改后执行：
+# mvn.cmd -Dtest=SyncRuntimeConfigTest,SyncRuntimeAssemblerTest,JdbcPollingTriggerAdapterTest test
+# 再运行 tools\service.cmd，正常应打印 polling=true。watermark 仅存当前进程；本配置不解决
+# hard DELETE、相同时间戳晚到或 watermark 持久化。

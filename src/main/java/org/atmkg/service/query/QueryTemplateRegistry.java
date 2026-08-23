@@ -16,7 +16,14 @@ import java.util.Set;
 import org.atmkg.core.error.QueryExecutionException;
 import org.atmkg.core.model.QuerySpec;
 
-/** Loads a fixed, non-Cypher subset of QuerySpec definitions from production configuration. */
+/**
+ * 新增 queryId 只改 {@code queries/query-templates.yaml}：复制现有模板，type 填 NEIGHBORS/K_HOP，
+ * relationshipTypes/classFilters IRI 到正式 TTL 查证，并运行 QueryTemplateRegistryTest。
+ *
+ * <p>只有模板 schema 经批准要增加所有查询共用的安全字段时才写 Java。接受 raw Cypher/SQL/script 会绕过
+ * QuerySpec 校验；放宽未知字段会让拼错配置静默失效。启动时报模板错误先查 queryId 重复、type/direction、
+ * K_HOP depth 和空列表项，不要改 Neo4jQueryService。
+ */
 public final class QueryTemplateRegistry {
     private static final Set<String> ROOT_FIELDS = Set.of("templates");
     private static final Set<String> TEMPLATE_FIELDS = Set.of(

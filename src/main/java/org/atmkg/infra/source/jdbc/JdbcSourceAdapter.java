@@ -26,10 +26,13 @@ import org.atmkg.core.spi.SourceAdapter;
 import org.atmkg.infra.source.config.ConfiguredSource;
 
 /**
- * Generic JDBC physical-source boundary.
+ * 新增 MySQL 表/view 不改本类：在 {@code config/sources.yaml} 的 jdbc source.objects 下增加 object，
+ * 填 table 或 view（二选一）、keyFields 和可选 watermarkField；账号名/密码通过 usernameEnv/passwordEnv
+ * 指向环境变量。新增业务字段再去 {@code mapping/字段映射.xlsx}。
  *
- * <p>It reads configured tables or views and produces SourceRecord values only. SQL identifiers come
- * exclusively from validated configuration; record keys and watermarks are always bound parameters.
+ * <p>只有参数化 SQL 生成、通用标识符校验、ResultSet 类型读取或流式资源生命周期变化才写 Java。拼接用户
+ * SQL、加航空字段/数据库厂商业务分支会破坏安全和通用边界。读取失败先查 driver/url/env/SELECT 权限；
+ * “缺少配置字段”查 ResultSet 列名；增量问题查 watermarkField 类型和索引。无 hard DELETE/JOIN/持久化游标。
  */
 public final class JdbcSourceAdapter implements SourceAdapter {
     private static final String ADAPTER = "jdbc";

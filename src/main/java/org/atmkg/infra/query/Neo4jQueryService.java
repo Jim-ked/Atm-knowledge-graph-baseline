@@ -21,7 +21,14 @@ import org.neo4j.driver.Record;
 import org.neo4j.driver.Session;
 import org.neo4j.driver.SessionConfig;
 
-/** QueryService backed by Neo4j. All outward IDs are stable kg_uid values. */
+/**
+ * 新增固定业务查询不要修改本类；在 {@code queries/query-templates.yaml} 复制 NEIGHBORS/K_HOP 模板，
+ * 由 TemplateAwareQueryService 展开。API depth/结果上限改 {@code config/api.yaml}。
+ *
+ * <p>只有 ENTITY/NEIGHBORS/K_HOP/PATH 到参数化 Cypher 的通用语义或诱导子图加载有 bug 才写 Java。
+ * 加 raw Cypher、LIMIT/top-N、空间推理或业务 if 会破坏 QueryService/GraphDTO 契约。Review 正常而 API
+ * 查询失败时先比较 QuerySpec 的 direction/types/classes/depth 和 config/api 上限，再进入本类。
+ */
 public final class Neo4jQueryService implements QueryService {
     private static final String ENTITY_LABEL = "KGEntity";
 

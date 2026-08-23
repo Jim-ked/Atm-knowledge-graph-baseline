@@ -1,7 +1,12 @@
+# 新增 query 时，在 templates 下复制一个完整块并修改 queryId（例如 airport-direct-flights）。
+# type 只能 NEIGHBORS/K_HOP；direction 只能 BOTH/INCOMING/OUTGOING；K_HOP 必须写 depth>=1，
+# NEIGHBORS 不能写 depth。relationshipTypes/classFilters 的完整 IRI 到
+# ontology/atm_knowledge_graph.ttl 确认。startUid 由 QuerySpec 调用者传入，不写在模板。
+# 禁止增加 cypher/sql/script 字段，QueryTemplateRegistry 会拒绝未知字段。
 templates:
   airport-direct-flights:
-    type: NEIGHBORS
-    direction: INCOMING
+    type: NEIGHBORS     # 从一个机场查询直接相邻事实
+    direction: INCOMING # Flight --departsFrom/arrivesAt--> Airport，所以从机场看入向边
     relationshipTypes:
       - urn:atm-knowledge-graph:departsFrom
       - urn:atm-knowledge-graph:arrivesAt
@@ -10,7 +15,7 @@ templates:
 
   segment-route-structures:
     type: NEIGHBORS
-    direction: INCOMING
+    direction: INCOMING # RouteSequence --hasSegment--> RouteSegment
     relationshipTypes:
       - urn:atm-knowledge-graph:hasSegment
     classFilters:
@@ -20,8 +25,12 @@ templates:
 
   planned-route-flights:
     type: NEIGHBORS
-    direction: INCOMING
+    direction: INCOMING # Flight --hasPlannedRoute--> PlannedFlightRoute
     relationshipTypes:
       - urn:atm-knowledge-graph:hasPlannedRoute
     classFilters:
       - urn:atm-knowledge-graph:Flight
+
+# 新增/修改后执行：
+# mvn.cmd -Dtest=QueryTemplateRegistryTest,TemplateAwareQueryServiceTest test
+# 再执行 mvn.cmd test。模板只能查询图中已有关系；RouteSegment-Airspace 空间事实不会在这里产生。

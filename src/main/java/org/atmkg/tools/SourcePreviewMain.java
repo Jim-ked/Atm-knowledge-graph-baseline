@@ -16,10 +16,12 @@ import org.atmkg.infra.source.config.SourceConfig;
 import org.atmkg.infra.source.excel.ExcelSourceAdapter;
 
 /**
- * 轻量人工数据源预览入口。
+ * Excel 读取不符合预期时从本工具进入；不要为新增字段修改本类。无参数会优先
+ * {@code config/sources.local.yaml}，检查正式源必须执行
+ * {@code tools\source-preview.cmd config\sources.yaml <sourceId> <objectName> 5}。
  *
- * <p>只读取 SourceAdapter 产出的 SourceRecord，不写 Neo4j、不执行同步，也不解释航空业务语义。
- * 用于人工对照真实源文件，确认 sources.yaml 的文件/Sheet/行组装配置是否符合预期。
+ * <p>只有人工输出格式或支持哪个既有 Adapter 的工具范围经确认变化时才改 Java。它只看 SourceRecord，
+ * 不判断 mapping，也不写 Neo4j；字段已读到但图中没有应继续查字段映射.xlsx。当前不支持 JDBC 预览。
  */
 public final class SourcePreviewMain {
     private SourcePreviewMain() {}

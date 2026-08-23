@@ -19,11 +19,13 @@ import org.atmkg.core.spi.SourceAdapter;
 import org.atmkg.core.spi.TriggerAdapter;
 
 /**
- * Minimal JDBC watermark polling trigger.
+ * 开启/新增 polling 不改本类：在 {@code config/sources.yaml} 的 JDBC object 增加 watermarkField，
+ * 再在 {@code config/sync.yaml} 增加 sourceId/sourceObject/initialWatermark scope。只有轮询调度、
+ * watermark 推进或失败重试的通用机制变化才写 Java。
  *
- * <p>Changed rows are discovery signals only. This adapter emits their stable source identity and
- * leaves the authoritative {@code readByKey -> mapping -> replaceProjection} path to SyncService.
- * Hard deletes are intentionally outside this timestamp-watermark boundary.
+ * <p>本类只发包含稳定 sourceKey 的 ChangeEvent，不能直接写 GraphStore。改成携带行数据会绕过权威回读。
+ * 当前严格 {@code watermark > ?}、状态仅在进程内，hard DELETE/同时间戳晚到未解决。重复或遗漏先查
+ * scanChangedSince 返回 timestamp、event consumer 是否成功、失败轮次是否错误推进 watermark。
  */
 public final class JdbcPollingTriggerAdapter implements TriggerAdapter {
     private final Map<String, SourceAdapter> adapters;

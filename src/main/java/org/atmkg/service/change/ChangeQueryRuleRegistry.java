@@ -15,7 +15,14 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-/** Loads the direct GraphNodeDTO.kind to named-query association table. */
+/**
+ * 新增 kind 规则只改 {@code queries/change-query-rules.yaml}：左侧从 API GraphDTO/Viewer 实际
+ * {@code GraphNodeDTO.kind} 取值，右侧 queryId 必须先存在于 {@code queries/query-templates.yaml}。
+ *
+ * <p>只有这张 kind→queryId 表的严格解析机制有 bug 才写 Java；不要加入 sourceId/table 条件 DSL。
+ * 加规则后 service.cmd 没反应是当前预期：KgServiceMain/SyncRuntime 尚未加载 Registry，也没有 outward sink。
+ * 先运行 ChangeQueryRuleRegistryTest/GraphChangeAssociationProjectorTest 验证独立链。
+ */
 public final class ChangeQueryRuleRegistry {
     private static final Set<String> ROOT_FIELDS = Set.of("associations");
 

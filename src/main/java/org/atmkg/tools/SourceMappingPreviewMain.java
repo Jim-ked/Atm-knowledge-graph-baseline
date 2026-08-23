@@ -18,7 +18,14 @@ import org.atmkg.infra.source.config.ConfiguredSource;
 import org.atmkg.infra.source.config.SourceConfig;
 import org.atmkg.infra.source.excel.ExcelSourceAdapter;
 
-/** Development-only SourceRecord to MappingResult preview. It never writes a graph store. */
+/**
+ * Excel SourceRecord 正确但 mapping 结果可疑时运行：
+ * {@code tools\source-mapping-preview.cmd config\sources.yaml mapping\字段映射.xlsx 3}。
+ * 新增属性/实体/关系只改工作簿和 TTL，不改本类。
+ *
+ * <p>只有抽样输出或预览工具支持范围经确认变化时才写 Java。无参数使用 sources.local + fixture mapping，
+ * 不能据此宣称正式 mapping 正确；本工具只创建 ExcelSourceAdapter，不预览 JDBC，也绝不写 GraphStore。
+ */
 public final class SourceMappingPreviewMain {
     private SourceMappingPreviewMain() {}
 

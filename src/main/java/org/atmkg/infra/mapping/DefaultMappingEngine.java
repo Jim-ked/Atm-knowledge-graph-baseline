@@ -20,7 +20,14 @@ import org.atmkg.core.model.mapping.RelationshipMappingSpec;
 import org.atmkg.core.spi.IdentityResolver;
 import org.atmkg.core.spi.MappingEngine;
 
-/** Domain-neutral mapping executor. It never branches on aviation classes or source field names. */
+/**
+ * 新增属性、实体或关系不要修改本类：先在 {@code ontology/atm_knowledge_graph.ttl} 确认 IRI，再编辑
+ * {@code mapping/字段映射.xlsx} 对应 Sheet。新增数据表则先改 {@code config/sources.yaml}。
+ *
+ * <p>只有所有实体共用的字段路径读取、trim/upper/lower/integer/long/decimal/boolean 转换或 MappingResult
+ * 生成规则确需变化才写 Java。加入 Airport/Airspace/Flight if 会把 workbook 语义硬编码进 Core 主链。
+ * 映射失败先用 source-preview 确认字段，再查工作簿 sourceId/sourceObject/businessKey/locator；不要从查询结果补端点。
+ */
 public final class DefaultMappingEngine implements MappingEngine {
     private final MappingCatalog catalog;
     private final IdentityResolver identityResolver;

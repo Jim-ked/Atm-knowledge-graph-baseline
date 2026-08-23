@@ -26,7 +26,15 @@ import org.atmkg.service.sync.SyncRuntime;
 import org.atmkg.service.sync.SyncRuntimeConfig;
 import org.neo4j.driver.Driver;
 
-/** Concrete process-edge wiring for the optional synchronization runtime. */
+/**
+ * 只有“已有通用 SourceAdapter 已获准进入正式进程”或同步组件装配关系变化时才改这里。新增 Excel Sheet/
+ * JDBC 表去 {@code config/sources.yaml}，polling scope 去 {@code config/sync.yaml}，字段和关系去
+ * {@code mapping/字段映射.xlsx}，不要为这些需求增加 switch 分支。
+ *
+ * <p>当前固定读取正式 sources/sync、正式 mapping，按 adapter=excel|jdbc 创建实现并可创建 polling。
+ * 误加载 sources.local.yaml/fixture mapping 会把开发数据带进服务；把 initialFullImport 当自动 fullRebuild
+ * 会造成启动清图。配置失败先查 sourceId/objects、polling scope 和 watermarkField，再查本类 validate。
+ */
 final class SyncRuntimeAssembler {
     private static final String IDENTITY_NAMESPACE = "urn:atm-knowledge-graph:";
 

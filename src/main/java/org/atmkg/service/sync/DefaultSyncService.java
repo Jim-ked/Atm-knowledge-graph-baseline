@@ -20,8 +20,14 @@ import org.atmkg.core.spi.SourceAdapter;
 import org.atmkg.core.spi.SyncService;
 
 /**
- * Domain-neutral synchronization coordinator.
- * Change events identify records only; current authoritative facts are always re-read through SourceAdapter.
+ * 新增字段/实体/关系时不要改这里：分别去 TTL、{@code mapping/字段映射.xlsx}；新增源入口去
+ * {@code config/sources.yaml}。只有 fullSync/fullRebuild/resync/compensateSince 的通用同步语义变化
+ * 或 iterator 资源关闭缺陷才修改本类。
+ *
+ * <p>ChangeEvent 只能提供 SourceRef；本类必须 readByKey 回读后 map + replaceProjection。绕过回读会把
+ * polling 快照误当权威事实；把 fullSync 改成 clearProject 会误删其他入口。同步失败先记录
+ * sourceId/objectName/sourceKey，并依次查 Adapter 输出、mapping 结果、GraphStore 异常。近期 eventId
+ * 只做本进程抑制，不是 exactly-once；notice 只能在 GraphStore 成功后发布。
  */
 public final class DefaultSyncService implements SyncService {
     static final int RECENT_EVENT_LIMIT = 4096;

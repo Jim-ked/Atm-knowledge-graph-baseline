@@ -1,6 +1,14 @@
 neo4j:
-  # 必须由运行环境显式提供；禁止 localhost、默认数据库或共享 data 目录兜底。
+  # 这四行记录当前固定环境变量名，KgServiceMain 并不加载本文件。
+  # 改右侧文字不会改变 Neo4jConnectionSettings；不要在这里填 URI、用户名或密码值。
   uriEnv: ATMKG_NEO4J_URI
   databaseEnv: ATMKG_NEO4J_DATABASE
   usernameEnv: ATMKG_NEO4J_USERNAME
   passwordEnv: ATMKG_NEO4J_PASSWORD
+
+# 实际切换 Neo4j 连接要在启动进程的同一个 cmd 中设置：
+# set "ATMKG_NEO4J_URI=bolt://127.0.0.1:17687"
+# set "ATMKG_NEO4J_DATABASE=neo4j"
+# set "ATMKG_NEO4J_USERNAME=neo4j"
+# set "ATMKG_NEO4J_PASSWORD=<不写入仓库的密码>"
+# 然后运行 tools\service.cmd、tools\review.cmd 或 tools\sync.cmd 验证。
