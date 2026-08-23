@@ -62,10 +62,14 @@ public final class DefaultMappingEngine implements MappingEngine {
             Object subjectKey = readPath(record.getFields(), relationshipSpec.getSubjectLocator());
             Object objectKey = readPath(record.getFields(), relationshipSpec.getObjectLocator());
             if (isBlankValue(subjectKey) || isBlankValue(objectKey)) continue;
-            EntityMappingSpec subjectMapping = catalog.uniqueEntityMapping(record.getSourceId(), relationshipSpec.getSubjectClassIri())
-                    .orElseThrow(() -> new MappingExecutionException("关系起点实体映射不唯一：" + relationshipSpec.getPredicateIri()));
-            EntityMappingSpec objectMapping = catalog.uniqueEntityMapping(record.getSourceId(), relationshipSpec.getObjectClassIri())
-                    .orElseThrow(() -> new MappingExecutionException("关系终点实体映射不唯一：" + relationshipSpec.getPredicateIri()));
+            EntityMappingSpec subjectMapping = catalog.compatibleEntityMapping(
+                            record.getSourceId(), relationshipSpec.getSubjectClassIri())
+                    .orElseThrow(() -> new MappingExecutionException(
+                            "关系起点实体身份映射缺失或 UID规则不兼容：" + relationshipSpec.getPredicateIri()));
+            EntityMappingSpec objectMapping = catalog.compatibleEntityMapping(
+                            record.getSourceId(), relationshipSpec.getObjectClassIri())
+                    .orElseThrow(() -> new MappingExecutionException(
+                            "关系终点实体身份映射缺失或 UID规则不兼容：" + relationshipSpec.getPredicateIri()));
             String sourceUid = identityResolver.entityUid(subjectMapping, String.valueOf(subjectKey));
             String targetUid = identityResolver.entityUid(objectMapping, String.valueOf(objectKey));
             String relationUid = identityResolver.relationshipUid(relationshipSpec, sourceUid, targetUid, record);

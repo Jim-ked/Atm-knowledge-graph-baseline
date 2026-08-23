@@ -1,0 +1,27 @@
+templates:
+  airport-direct-flights:
+    type: NEIGHBORS
+    direction: INCOMING
+    relationshipTypes:
+      - urn:atm-knowledge-graph:departsFrom
+      - urn:atm-knowledge-graph:arrivesAt
+    classFilters:
+      - urn:atm-knowledge-graph:Flight
+
+  segment-route-structures:
+    type: NEIGHBORS
+    direction: INCOMING
+    relationshipTypes:
+      - urn:atm-knowledge-graph:hasSegment
+    classFilters:
+      - urn:atm-knowledge-graph:Route
+      - urn:atm-knowledge-graph:ScheduledFlightRoute
+      - urn:atm-knowledge-graph:PlannedFlightRoute
+
+  planned-route-flights:
+    type: NEIGHBORS
+    direction: INCOMING
+    relationshipTypes:
+      - urn:atm-knowledge-graph:hasPlannedRoute
+    classFilters:
+      - urn:atm-knowledge-graph:Flight

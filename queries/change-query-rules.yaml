@@ -1,0 +1,7 @@
+associations:
+  Airport:
+    - airport-direct-flights
+  RouteSegment:
+    - segment-route-structures
+  PlannedFlightRoute:
+    - planned-route-flights

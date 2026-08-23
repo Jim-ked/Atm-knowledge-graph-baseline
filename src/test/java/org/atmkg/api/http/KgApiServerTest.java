@@ -2,6 +2,7 @@ package org.atmkg.api.http;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -141,6 +142,16 @@ class KgApiServerTest {
         assertEquals(200, response.statusCode());
         assertEquals(QuerySpec.Type.K_HOP, queryService.lastSpec.getType());
         assertEquals("start", queryService.lastSpec.getStartUid());
+    }
+
+    @Test
+    void unifiedQueryDoesNotExposeNamedTemplatesOverHttp() throws Exception {
+        HttpResponse<String> response = post("/graph/query",
+                "{\"type\":\"NAMED\",\"startUid\":\"start\"}");
+
+        assertEquals(400, response.statusCode());
+        assertEquals("INVALID_REQUEST", json(response).get("code").asText());
+        assertNull(queryService.lastSpec);
     }
 
     @Test

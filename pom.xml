@@ -14,6 +14,7 @@
     <jena.version>5.6.0</jena.version>
     <poi.version>5.5.1</poi.version>
     <neo4j.driver.version>6.2.1</neo4j.driver.version>
+    <mysql.connector.version>9.4.0</mysql.connector.version>
     <jackson.version>2.22.2</jackson.version>
     <junit.version>5.11.4</junit.version>
   </properties>
@@ -42,6 +43,13 @@
       <groupId>org.neo4j.driver</groupId>
       <artifactId>neo4j-java-driver</artifactId>
       <version>${neo4j.driver.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>com.mysql</groupId>
+      <artifactId>mysql-connector-j</artifactId>
+      <version>${mysql.connector.version}</version>
+      <scope>runtime</scope>
     </dependency>
 
     <dependency>

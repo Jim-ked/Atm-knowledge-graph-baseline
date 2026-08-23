@@ -57,6 +57,14 @@ public final class PoiMappingRegistry implements MappingRegistry {
             String key = spec.getSourceId() + "|" + spec.getSourceObject() + "|" + spec.getClassIri();
             if (!entityKeys.add(key)) issues.add("实体映射重复：" + key);
         }
+        Set<String> identityGroups = new HashSet<>();
+        for (EntityMappingSpec spec : catalog.getEntities()) {
+            String group = spec.getSourceId() + "\u0000" + spec.getClassIri();
+            if (identityGroups.add(group)
+                    && catalog.compatibleEntityMapping(spec.getSourceId(), spec.getClassIri()).isEmpty()) {
+                issues.add("实体身份映射 UID规则不兼容：" + spec.getSourceId() + " / " + spec.getClassIri());
+            }
+        }
 
         for (PropertyMappingSpec spec : catalog.getProperties()) {
             if (!schema.hasClass(spec.getClassIri())) issues.add("属性映射引用未知实体类 " + spec.getClassIri());
@@ -96,11 +104,11 @@ public final class PoiMappingRegistry implements MappingRegistry {
                     issues.add("关系 range 不兼容：" + spec.getPredicateIri() + " -> " + spec.getObjectClassIri());
                 }
             }
-            if (catalog.uniqueEntityMapping(spec.getSourceId(), spec.getSubjectClassIri()).isEmpty()) {
-                issues.add("关系起点无法唯一定位实体映射：" + spec.getPredicateIri());
+            if (catalog.compatibleEntityMapping(spec.getSourceId(), spec.getSubjectClassIri()).isEmpty()) {
+                issues.add("关系起点缺少兼容实体身份映射：" + spec.getPredicateIri());
             }
-            if (catalog.uniqueEntityMapping(spec.getSourceId(), spec.getObjectClassIri()).isEmpty()) {
-                issues.add("关系终点无法唯一定位实体映射：" + spec.getPredicateIri());
+            if (catalog.compatibleEntityMapping(spec.getSourceId(), spec.getObjectClassIri()).isEmpty()) {
+                issues.add("关系终点缺少兼容实体身份映射：" + spec.getPredicateIri());
             }
         }
         if (!issues.isEmpty()) throw new MappingValidationException(issues);

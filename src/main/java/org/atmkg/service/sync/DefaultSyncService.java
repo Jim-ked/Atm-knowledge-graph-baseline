@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 import org.atmkg.core.error.SyncException;
 import org.atmkg.core.model.ChangeEvent;
 import org.atmkg.core.model.MappingResult;
@@ -27,13 +28,20 @@ public final class DefaultSyncService implements SyncService {
     private final Map<String, SourceAdapter> adapters;
     private final MappingEngine mappingEngine;
     private final GraphStore graphStore;
+    private final Consumer<GraphChangeNotice> noticeListener;
     private final Set<String> processedEventIds = new HashSet<>();
 
     public DefaultSyncService(Map<String, SourceAdapter> adapters, MappingEngine mappingEngine, GraphStore graphStore) {
+        this(adapters, mappingEngine, graphStore, notice -> {});
+    }
+
+    public DefaultSyncService(Map<String, SourceAdapter> adapters, MappingEngine mappingEngine, GraphStore graphStore,
+                              Consumer<GraphChangeNotice> noticeListener) {
         Objects.requireNonNull(adapters, "adapters");
         this.adapters = Map.copyOf(new LinkedHashMap<>(adapters));
         this.mappingEngine = Objects.requireNonNull(mappingEngine, "mappingEngine");
         this.graphStore = Objects.requireNonNull(graphStore, "graphStore");
+        this.noticeListener = Objects.requireNonNull(noticeListener, "noticeListener");
     }
 
     @Override
@@ -43,8 +51,12 @@ public final class DefaultSyncService implements SyncService {
         SourceRef ref = new SourceRef(event.getSourceId(), event.getObjectName(), event.getSourceKey());
         if (event.getOperation() == ChangeEvent.Operation.DELETE) {
             graphStore.deleteProjection(ref);
+            noticeListener.accept(GraphChangeNotice.forDelete(ref, Instant.now()));
         } else {
-            resync(event.getSourceId(), event.getObjectName(), event.getSourceKey());
+            Optional<MappingResult> result = resyncProjection(
+                    event.getSourceId(), event.getObjectName(), event.getSourceKey());
+            result.ifPresent(mapped -> noticeListener.accept(
+                    GraphChangeNotice.forUpsert(ref, mapped, Instant.now())));
         }
         processedEventIds.add(event.getEventId());
     }
@@ -101,24 +113,30 @@ public final class DefaultSyncService implements SyncService {
 
     @Override
     public void resync(String sourceId, String objectName, String sourceKey) {
+        resyncProjection(sourceId, objectName, sourceKey);
+    }
+
+    private Optional<MappingResult> resyncProjection(String sourceId, String objectName, String sourceKey) {
         SourceAdapter adapter = adapter(sourceId);
         SourceRef ref = new SourceRef(sourceId, objectName, sourceKey);
         Optional<SourceRecord> current = adapter.readByKey(objectName, sourceKey);
         if (current.isEmpty()) {
             // The authoritative source no longer contains this key; the graph projection must not survive.
             graphStore.deleteProjection(ref);
-            return;
+            return Optional.empty();
         }
         validateRecordScope(current.get(), sourceId, objectName);
         if (!current.get().getSourceKey().equals(sourceKey)) {
             throw new SyncException("SourceAdapter 返回错误 sourceKey：expected=" + sourceKey
                     + ", actual=" + current.get().getSourceKey());
         }
-        replace(current.get());
+        return Optional.of(replace(current.get()));
     }
 
-    private void replace(SourceRecord record) {
-        graphStore.replaceProjection(SourceRef.from(record), map(record));
+    private MappingResult replace(SourceRecord record) {
+        MappingResult result = map(record);
+        graphStore.replaceProjection(SourceRef.from(record), result);
+        return result;
     }
 
     private MappingResult map(SourceRecord record) {

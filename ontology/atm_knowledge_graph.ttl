@@ -53,6 +53,16 @@ atmkg:ScheduledFlightRoute a owl:Class ; rdfs:subClassOf atmkg:AviationBaseObjec
     rdfs:comment "描述班机运行所采用的顺序路线及相关航行参数，但当前数据中不包含具体执行时间，因此不等同于具体航班或飞行计划实例。后续获得具体航班、飞行计划和时间数据后，可进一步建立与具体运行实例的关系。"@zh-CN ;
     atmkg:sourceField "班机航线编号、名称、类型、顺序节点及疑似航段参数"@zh-CN ; atmkg:designRationale "独立表达运行路线数据，不提前建立 Flight/FlightPlan 体系。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
 
+atmkg:Flight a owl:Class ;
+    rdfs:label "航班"@zh-CN ;
+    rdfs:comment "表示一个具有稳定业务标识、运行状态、机型、执飞信息和计划/实际时间的具体航班；当前不提前实体化机型、执飞方或状态。"@zh-CN ;
+    atmkg:sourceField "航班结构化数据"@zh-CN ; atmkg:designRationale "具体运行航班独立于航空基础对象和可复用班机航线资料。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:PlannedFlightRoute a owl:Class ; rdfs:subClassOf atmkg:RouteSequence ;
+    rdfs:label "计划航线"@zh-CN ;
+    rdfs:comment "表示某一具体航班计划采用的有序路线，可复用 RouteNode 与 RouteSegment 表达顺序结构；不等同于基础 Route 或 ScheduledFlightRoute。"@zh-CN ;
+    atmkg:sourceField "航班计划采用的有序点/航段结构"@zh-CN ; atmkg:designRationale "计划航线保存具体 Flight 的源事实；与基础航路航段的对应及空间穿越关系留给后续独立计算。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
 atmkg:Airspace a owl:Class ; rdfs:subClassOf atmkg:AviationBaseObject ;
     rdfs:label "空域"@zh-CN ; rdfs:comment "表示具有字符串编码、数字形式业务类型码、上下限和单一顺序 Polygon 几何的空域。"@zh-CN ;
     atmkg:sourceField "空域主表与 Polygon 顺序点"@zh-CN ; atmkg:designRationale "使用代码与类型名属性，不将二十余种实际类型全部建为 OWL 子类。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
@@ -106,6 +116,18 @@ atmkg:hasSegment a owl:ObjectProperty ; rdfs:domain atmkg:RouteSequence ; rdfs:r
     rdfs:label "具有航段"@zh-CN ; rdfs:comment "连接 Route 或 ScheduledFlightRoute 与由相邻节点生成的航段。"@zh-CN ;
     atmkg:sourceField "相邻节点结构"@zh-CN ; atmkg:designRationale "源数据无 segmentName，航段身份由路线代码与起止 sequence 稳定生成。"@zh-CN ; atmkg:designStatus "后续推导"@zh-CN .
 
+atmkg:departsFrom a owl:ObjectProperty ; rdfs:domain atmkg:Flight ; rdfs:range atmkg:Airport ;
+    rdfs:label "从机场起飞"@zh-CN ; rdfs:comment "连接具体航班与其出发机场。"@zh-CN ;
+    atmkg:sourceField "departureAirportCode"@zh-CN ; atmkg:designRationale "机场关系由稳定机场代码通过人工映射建立，不在 Java 中硬编码字段语义。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:arrivesAt a owl:ObjectProperty ; rdfs:domain atmkg:Flight ; rdfs:range atmkg:Airport ;
+    rdfs:label "到达机场"@zh-CN ; rdfs:comment "连接具体航班与其到达机场。"@zh-CN ;
+    atmkg:sourceField "arrivalAirportCode"@zh-CN ; atmkg:designRationale "机场关系由稳定机场代码通过人工映射建立，不在 Java 中硬编码字段语义。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+atmkg:hasPlannedRoute a owl:ObjectProperty ; rdfs:domain atmkg:Flight ; rdfs:range atmkg:PlannedFlightRoute ;
+    rdfs:label "具有计划航线"@zh-CN ; rdfs:comment "连接具体航班与其计划采用的有序路线。"@zh-CN ;
+    atmkg:sourceField "flightId/计划航线标识"@zh-CN ; atmkg:designRationale "只表达源数据中可确定的航班—计划航线关系；基础航路及空域关系留给后续独立计算。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
 atmkg:nextNode a owl:ObjectProperty ; rdfs:domain atmkg:RouteNode ; rdfs:range atmkg:RouteNode ;
     rdfs:label "下一节点"@zh-CN ; rdfs:comment "根据同一路线中完整且唯一的 sequence 生成，序号缺失、重复或间断时不猜测。"@zh-CN ;
     atmkg:sourceField "RouteNode sequence"@zh-CN ; atmkg:designRationale "显式相邻关系支持顺序查询。"@zh-CN ; atmkg:designStatus "后续推导"@zh-CN .
@@ -137,6 +159,17 @@ atmkg:countryRegion a owl:DatatypeProperty ; rdfs:range xsd:string ; rdfs:label 
 atmkg:latitude a owl:DatatypeProperty ; rdfs:range xsd:decimal ; rdfs:label "纬度"@zh-CN ; rdfs:comment "保存十进制度纬度，源字段可含 N/S 后缀。"@zh-CN ; atmkg:sourceField "latitude"@zh-CN ; atmkg:designRationale "实际坐标格式已核定，Raw 仍在清洗层保留。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
 atmkg:longitude a owl:DatatypeProperty ; rdfs:range xsd:decimal ; rdfs:label "经度"@zh-CN ; rdfs:comment "保存十进制度经度，源字段可含 E/W 后缀。"@zh-CN ; atmkg:sourceField "longitude"@zh-CN ; atmkg:designRationale "实际坐标格式已核定，坐标相同不导致实体合并。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
 atmkg:sequenceNumber a owl:DatatypeProperty ; rdfs:range xsd:integer ; rdfs:label "序号"@zh-CN ; rdfs:comment "保存 RouteNode 或 BoundaryPoint 的离散顺序。"@zh-CN ; atmkg:sourceField "sequence"@zh-CN ; atmkg:designRationale "重复、缺失或间断时不猜测。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+
+# Flight
+atmkg:flightId a owl:DatatypeProperty ; rdfs:domain atmkg:Flight ; rdfs:range xsd:string ; rdfs:label "航班唯一标识"@zh-CN ; rdfs:comment "保存源系统中用于稳定识别具体航班的唯一业务标识。"@zh-CN ; atmkg:sourceField "flightId"@zh-CN ; atmkg:designRationale "作为 Flight 的主要稳定业务标识，不使用文件名或 Neo4j 内部 ID。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:flightNumber a owl:DatatypeProperty ; rdfs:domain atmkg:Flight ; rdfs:range xsd:string ; rdfs:label "航班号"@zh-CN ; rdfs:comment "保存具体航班的业务航班号；允许与稳定 flightId 不同。"@zh-CN ; atmkg:sourceField "flightNumber"@zh-CN ; atmkg:designRationale "航班号用于业务展示和关联，不强制承担唯一身份语义。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:aircraftType a owl:DatatypeProperty ; rdfs:domain atmkg:Flight ; rdfs:range xsd:string ; rdfs:label "机型"@zh-CN ; rdfs:comment "保存当前航班记录中的机型字段；后续确有独立知识对象需求时可通过本体和映射正常实体化。"@zh-CN ; atmkg:sourceField "aircraftType"@zh-CN ; atmkg:designRationale "当前保持为属性，避免提前建立未需要的机型实体体系。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:operator a owl:DatatypeProperty ; rdfs:domain atmkg:Flight ; rdfs:range xsd:string ; rdfs:label "执飞方"@zh-CN ; rdfs:comment "保存当前源数据中的执飞人或执飞单位文本；后续需要实体化时通过修改本体和字段映射完成。"@zh-CN ; atmkg:sourceField "operator"@zh-CN ; atmkg:designRationale "当前保持为属性，不在 Java Core 中固化组织或人员语义。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:flightStatus a owl:DatatypeProperty ; rdfs:domain atmkg:Flight ; rdfs:range xsd:string ; rdfs:label "航班状态"@zh-CN ; rdfs:comment "保存源系统提供的航班状态，如计划、取消、执行、完成等；本轮不建立独立状态类或状态机。"@zh-CN ; atmkg:sourceField "flightStatus"@zh-CN ; atmkg:designRationale "状态值由源数据和人工映射解释，不在本体中预设完整枚举。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:plannedDepartureTime a owl:DatatypeProperty ; rdfs:domain atmkg:Flight ; rdfs:range xsd:dateTime ; rdfs:label "计划起飞时间"@zh-CN ; rdfs:comment "保存计划起飞时间。"@zh-CN ; atmkg:sourceField "plannedDepartureTime"@zh-CN ; atmkg:designRationale "使用标准 xsd:dateTime 表达，不引入额外时间框架。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:plannedArrivalTime a owl:DatatypeProperty ; rdfs:domain atmkg:Flight ; rdfs:range xsd:dateTime ; rdfs:label "计划到达时间"@zh-CN ; rdfs:comment "保存计划到达时间。"@zh-CN ; atmkg:sourceField "plannedArrivalTime"@zh-CN ; atmkg:designRationale "使用标准 xsd:dateTime 表达，不引入额外时间框架。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:actualDepartureTime a owl:DatatypeProperty ; rdfs:domain atmkg:Flight ; rdfs:range xsd:dateTime ; rdfs:label "实际起飞时间"@zh-CN ; rdfs:comment "保存实际起飞时间；未执行或尚未产生时允许缺失。"@zh-CN ; atmkg:sourceField "actualDepartureTime"@zh-CN ; atmkg:designRationale "实际时间属于运行事实，缺失不反推计划时间。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
+atmkg:actualArrivalTime a owl:DatatypeProperty ; rdfs:domain atmkg:Flight ; rdfs:range xsd:dateTime ; rdfs:label "实际到达时间"@zh-CN ; rdfs:comment "保存实际到达时间；未完成或尚未产生时允许缺失。"@zh-CN ; atmkg:sourceField "actualArrivalTime"@zh-CN ; atmkg:designRationale "实际时间属于运行事实，缺失不反推计划时间。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .
 
 # Airport
 atmkg:airportCode a owl:DatatypeProperty ; rdfs:domain atmkg:Airport ; rdfs:range xsd:string ; rdfs:label "机场代码"@zh-CN ; rdfs:comment "当前与 ICAO 四字码一致，是主要稳定业务标识。"@zh-CN ; atmkg:sourceField "airportCode"@zh-CN ; atmkg:designRationale "保留实际字段名并与 icaoCode 做冲突检查。"@zh-CN ; atmkg:designStatus "已确认"@zh-CN .

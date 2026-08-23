@@ -2,16 +2,24 @@ package org.atmkg.infra;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.List;
 import java.util.Map;
+import org.atmkg.core.error.MappingValidationException;
 import org.atmkg.core.model.MappingResult;
 import org.atmkg.core.model.OntologySchema;
 import org.atmkg.core.model.SourceRecord;
+import org.atmkg.core.model.mapping.EntityMappingSpec;
 import org.atmkg.core.model.mapping.MappingCatalog;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.atmkg.fixture.CsvFixtureSourceAdapter;
 import org.atmkg.fixture.FixtureDataGenerator;
 import org.atmkg.fixture.FixtureScale;
@@ -64,4 +72,46 @@ class PoiMappingRegistryIntegrationTest {
         assertEquals(before.getEntities().size(), after.getEntities().size());
         assertFalse(after.getEntities().isEmpty());
     }
+
+    @Test
+    void acceptsMultipleSourceObjectsWithCompatibleEntityIdentityRule() throws Exception {
+        Path copy = temp.resolve("multi-source-mapping.xlsx");
+        Files.copy(Path.of("fixtures/mapping/fixture_mapping.xlsx"), copy, StandardCopyOption.REPLACE_EXISTING);
+        OntologySchema schema = new JenaOntologyService().load(Path.of("ontology/atm_knowledge_graph.ttl"));
+        PoiMappingRegistry registry = new PoiMappingRegistry();
+        MappingCatalog original = registry.load(copy, schema);
+        EntityMappingSpec airport = original.getEntities().stream()
+                .filter(spec -> spec.getSourceId().equals("fixture") && spec.getClassIri().equals(NS + "Airport"))
+                .findFirst().orElseThrow();
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook(Files.newInputStream(copy));
+             OutputStream output = Files.newOutputStream(copy)) {
+            Sheet entities = workbook.getSheet("实体映射");
+            Row row = entities.createRow(entities.getLastRowNum() + 1);
+            row.createCell(0).setCellValue("Airport");
+            row.createCell(1).setCellValue("fixture");
+            row.createCell(2).setCellValue("AIRPORT_POSITION");
+            row.createCell(3).setCellValue("positionAirportCode");
+            row.createCell(4).setCellValue(airport.getUidRule());
+            workbook.write(output);
+        }
+
+        MappingCatalog loaded = registry.load(copy, schema);
+        assertTrue(loaded.uniqueEntityMapping("fixture", NS + "Airport").isEmpty());
+        assertTrue(loaded.compatibleEntityMapping("fixture", NS + "Airport").isPresent());
+    }
+
+    @Test
+    void rejectsIncompatibleUidRulesEvenWithoutRelationshipMapping() {
+        OntologySchema schema = new JenaOntologyService().load(Path.of("ontology/atm_knowledge_graph.ttl"));
+        MappingCatalog incompatible = new MappingCatalog(List.of(
+                new EntityMappingSpec(NS + "Airport", "fixture", "AIRPORT", "airportCode", "rule-a"),
+                new EntityMappingSpec(NS + "Airport", "fixture", "AIRPORT_POSITION", "airportCode", "rule-b")),
+                List.of(), List.of());
+
+        assertThrows(MappingValidationException.class,
+                () -> new PoiMappingRegistry().validate(incompatible, schema));
+    }
+
+    private static final String NS = "urn:atm-knowledge-graph:";
 }

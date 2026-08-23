@@ -1,6 +1,53 @@
 sources: []
 
-# 正式数据源接入后人工填写。
-# 每个 source 至少明确 sourceId、adapter、连接信息引用、源对象、稳定 sourceKey/业务主键。
-# 若用于增量补偿，再明确变更时间/水位字段或等价机制。
-# 具体航空字段语义不得写入 Java Core，应由 mapping/字段映射.xlsx 解释。
+# 正式数据源接入后人工填写。这里仅描述“物理上去哪里读、怎样形成 SourceRecord”，
+# 具体航空字段、本体类、属性和关系语义仍由 mapping/字段映射.xlsx 维护。
+#
+# Excel 示例（保持注释，不代表当前正式源）：
+# sources:
+#   - sourceId: excel-main
+#     adapter: excel
+#     root: data/excel
+#     objects:
+#       airspace-base:
+#         files: "空域*.xlsx"       # 同结构文件可一次匹配多个
+#         sheet: 1                  # 可写从 1 开始的序号，也可直接写 Sheet 名称
+#         headerRow: 1
+#         keyFields: ["空域ID"]     # 仅用于稳定 SourceRecord.sourceKey，不决定本体 UID 语义
+#         recordMode: row
+#       airspace-boundary:
+#         files: "空域*.xlsx"
+#         sheet: 2
+#         headerRow: 1
+#         keyFields: ["空域ID", "序号"]
+#         recordMode: row
+#       scheduled-route-segment:
+#         files: "班机航线*.xlsx"
+#         sheet: 1
+#         headerRow: 1
+#         keyFields: ["航线ID", "序号"]
+#         recordMode: adjacent_next
+#         groupBy: ["航线ID"]
+#         orderBy: "序号"
+#
+# ADJACENT_NEXT 会把当前行字段保留在顶层，同时提供 current.<字段> 与 next.<字段>；
+# 最后一行没有 next 时不产生记录。Adapter 还会加入 __sourceKey 供确需复合业务键的映射使用。
+#
+# JDBC 示例（保持注释，不代表当前正式源）：
+# sources:
+#   - sourceId: jdbc-main
+#     adapter: jdbc
+#     driver: com.mysql.cj.jdbc.Driver
+#     url: jdbc:mysql://db-host:3306/atm?useUnicode=true&characterEncoding=UTF-8&useCursorFetch=true
+#     usernameEnv: ATMKG_JDBC_USERNAME
+#     passwordEnv: ATMKG_JDBC_PASSWORD
+#     fetchSize: 500
+#     objects:
+#       route-row:
+#         table: atm_route_rows       # 也可改为 view: current_route_rows；二者只能配置一个
+#         keyFields: [route_id, sequence_no]
+#         watermarkField: updated_at  # 可选；配置后才能使用 scanChangedSince
+#
+# JDBC 只允许读取受控配置中的简单表/视图和字段标识符，不接受运行时 SQL。
+# CSV / JSON 后续仍沿用同一 sourceId + objectName + sourceKey 边界；
+# 不在 Java Core 中加入任何数据库厂商或航空字段判断。

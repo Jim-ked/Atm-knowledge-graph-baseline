@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -17,6 +18,7 @@ import org.atmkg.core.model.GraphStoreStats;
 import org.atmkg.core.model.MappingResult;
 import org.atmkg.core.model.SourceRecord;
 import org.atmkg.core.model.SourceRef;
+import org.atmkg.core.model.SourceScope;
 import org.atmkg.core.spi.GraphStore;
 import org.atmkg.core.spi.MappingEngine;
 import org.atmkg.core.spi.SourceAdapter;
@@ -42,6 +44,43 @@ class DefaultSyncServiceTest {
     }
 
     @Test
+    void successfulUpsertPublishesActualMappedEntityAndRelationshipUids() {
+        RecordingStore store = new RecordingStore();
+        List<GraphChangeNotice> notices = new ArrayList<>();
+        MappingResult mapped = new MappingResult(
+                List.of(
+                        new GraphEntity("U1", "urn:test:Entity", "one", Map.of(), Map.of()),
+                        new GraphEntity("U2", "urn:test:Entity", "two", Map.of(), Map.of())),
+                List.of(new GraphRelationship("R1", "urn:test:related", "U1", "U2", Map.of(), Map.of())));
+        DefaultSyncService service = new DefaultSyncService(
+                Map.of("fixture", adapter(Optional.of(RECORD))), record -> mapped, store, notices::add);
+
+        service.handle(new ChangeEvent("E-NOTICE", "fixture", "OBJECT", "K1",
+                ChangeEvent.Operation.UPSERT, Instant.parse("2026-08-21T00:01:00Z")));
+
+        assertEquals(1, notices.size());
+        GraphChangeNotice notice = notices.get(0);
+        assertEquals(GraphChangeNotice.Operation.UPSERT, notice.getOperation());
+        assertEquals("K1", notice.getSourceRef().getSourceKey());
+        assertEquals(List.of("U1", "U2"), notice.getEntityUids());
+        assertEquals(List.of("R1"), notice.getRelationshipUids());
+    }
+
+    @Test
+    void mappingFailureDoesNotPublishNotice() {
+        List<GraphChangeNotice> notices = new ArrayList<>();
+        DefaultSyncService service = new DefaultSyncService(
+                Map.of("fixture", adapter(Optional.of(RECORD))),
+                record -> { throw new IllegalStateException("simulated mapping failure"); },
+                new RecordingStore(), notices::add);
+
+        assertThrows(SyncException.class, () -> service.handle(new ChangeEvent(
+                "E-MAP-FAIL", "fixture", "OBJECT", "K1", ChangeEvent.Operation.UPSERT, Instant.now())));
+
+        assertTrue(notices.isEmpty());
+    }
+
+    @Test
     void missingAuthoritativeRecordRemovesExistingProjection() {
         RecordingStore store = new RecordingStore();
         DefaultSyncService service = new DefaultSyncService(
@@ -54,12 +93,18 @@ class DefaultSyncServiceTest {
     @Test
     void deleteEventDoesNotNeedSourcePayload() {
         RecordingStore store = new RecordingStore();
+        List<GraphChangeNotice> notices = new ArrayList<>();
         DefaultSyncService service = new DefaultSyncService(
-                Map.of("fixture", adapter(Optional.empty())), r -> new MappingResult(List.of(), List.of()), store);
+                Map.of("fixture", adapter(Optional.empty())), r -> new MappingResult(List.of(), List.of()),
+                store, notices::add);
 
         service.handle(new ChangeEvent("E2", "fixture", "OBJECT", "K1",
                 ChangeEvent.Operation.DELETE, Instant.now()));
         assertEquals("K1", store.lastDeleted.getSourceKey());
+        assertEquals(1, notices.size());
+        assertEquals(GraphChangeNotice.Operation.DELETE, notices.get(0).getOperation());
+        assertTrue(notices.get(0).getEntityUids().isEmpty());
+        assertTrue(notices.get(0).getRelationshipUids().isEmpty());
     }
 
     @Test
@@ -82,18 +127,49 @@ class DefaultSyncServiceTest {
     void failedEventIsNotMarkedProcessedAndCanBeRetried() {
         RecordingStore store = new RecordingStore();
         store.failNextReplace = true;
+        List<GraphChangeNotice> notices = new ArrayList<>();
         DefaultSyncService service = new DefaultSyncService(
                 Map.of("fixture", adapter(Optional.of(RECORD))),
                 r -> new MappingResult(List.of(new GraphEntity("U1", "urn:test:Entity", "K1", Map.of(), Map.of())), List.of()),
-                store);
+                store, notices::add);
         ChangeEvent event = new ChangeEvent("E-RETRY", "fixture", "OBJECT", "K1",
                 ChangeEvent.Operation.UPSERT, Instant.now());
 
         assertThrows(IllegalStateException.class, () -> service.handle(event));
+        assertTrue(notices.isEmpty());
         service.handle(event);
 
         assertEquals(2, store.replaceAttempts);
         assertEquals(1, store.replaceCount);
+        assertEquals(1, notices.size());
+    }
+
+    @Test
+    void fullSyncAndFullRebuildDoNotPublishIncrementalNotices() {
+        List<GraphChangeNotice> notices = new ArrayList<>();
+        DefaultSyncService service = new DefaultSyncService(
+                Map.of("fixture", adapter(Optional.of(RECORD))),
+                record -> new MappingResult(
+                        List.of(new GraphEntity("U1", "urn:test:Entity", "K1", Map.of(), Map.of())), List.of()),
+                new RecordingStore(), notices::add);
+
+        service.fullSync("fixture", "OBJECT");
+        service.fullRebuild(List.of(new SourceScope("fixture", "OBJECT")));
+
+        assertTrue(notices.isEmpty());
+    }
+
+    @Test
+    void upsertWhoseAuthoritativeRecordDisappearedDoesNotGuessAffectedUids() {
+        List<GraphChangeNotice> notices = new ArrayList<>();
+        DefaultSyncService service = new DefaultSyncService(
+                Map.of("fixture", adapter(Optional.empty())),
+                record -> new MappingResult(List.of(), List.of()), new RecordingStore(), notices::add);
+
+        service.handle(new ChangeEvent("E-MISSING", "fixture", "OBJECT", "K1",
+                ChangeEvent.Operation.UPSERT, Instant.now()));
+
+        assertTrue(notices.isEmpty());
     }
 
     @Test

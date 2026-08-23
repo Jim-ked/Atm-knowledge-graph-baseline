@@ -5,6 +5,8 @@
 *.log
 .env
 config/*.local.yaml
+/fixtures/source-preview/
+/fixtures/mapping/source_preview_mapping.xlsx
 releases/
 viewer/node_modules/
 viewer/test-results/

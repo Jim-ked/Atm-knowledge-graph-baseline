@@ -32,6 +32,7 @@ import org.neo4j.driver.TransactionContext;
 /** Neo4j projection with one technical entity label and ontology-derived labels/types. */
 public final class Neo4jGraphStore implements GraphStore {
     static final String ENTITY_LABEL = "KGEntity";
+    static final String ENTITY_CONTRIBUTION_LABEL = "KGEntityContribution";
 
     private final Driver driver;
     private final SessionConfig sessionConfig;
@@ -56,8 +57,16 @@ public final class Neo4jGraphStore implements GraphStore {
                         "FOR (n:" + ENTITY_LABEL + ") REQUIRE (n.kg_project, n.kg_uid) IS UNIQUE").consume();
                 tx.run("CREATE INDEX atmkg_entity_class IF NOT EXISTS " +
                         "FOR (n:" + ENTITY_LABEL + ") ON (n.kg_class_iri)").consume();
-                tx.run("CREATE INDEX atmkg_entity_source IF NOT EXISTS " +
-                        "FOR (n:" + ENTITY_LABEL + ") ON (n.kg_source_id, n.kg_source_object, n.kg_source_key)").consume();
+                tx.run("DROP INDEX atmkg_entity_source IF EXISTS").consume();
+                tx.run("CREATE CONSTRAINT atmkg_entity_contribution_identity IF NOT EXISTS " +
+                        "FOR (c:" + ENTITY_CONTRIBUTION_LABEL + ") REQUIRE " +
+                        "(c.kg_project, c.kg_entity_uid, c.kg_source_id, c.kg_source_object, c.kg_source_key) IS UNIQUE")
+                        .consume();
+                tx.run("CREATE INDEX atmkg_entity_contribution_entity IF NOT EXISTS " +
+                        "FOR (c:" + ENTITY_CONTRIBUTION_LABEL + ") ON (c.kg_project, c.kg_entity_uid)").consume();
+                tx.run("CREATE INDEX atmkg_entity_contribution_source IF NOT EXISTS " +
+                        "FOR (c:" + ENTITY_CONTRIBUTION_LABEL + ") " +
+                        "ON (c.kg_project, c.kg_source_id, c.kg_source_object, c.kg_source_key)").consume();
                 dropLegacyRelationshipSchema(tx);
                 for (String type : ontology.allRelationshipTypes().stream().sorted().toList()) {
                     String token = identifier(type);
@@ -117,6 +126,17 @@ public final class Neo4jGraphStore implements GraphStore {
     }
 
     private void writeEntityBatch(TransactionContext tx, List<Map<String, Object>> rows) {
+        tx.run("UNWIND $rows AS row " +
+                        "MERGE (c:" + ENTITY_CONTRIBUTION_LABEL + " {" +
+                        "kg_project: $projectId, kg_entity_uid: row.uid, " +
+                        "kg_source_id: row.sourceId, kg_source_object: row.sourceObject, " +
+                        "kg_source_key: row.sourceKey}) " +
+                        "SET c = row.props",
+                parameters("rows", rows, "projectId", projectId)).consume();
+        rebuildCanonicalEntities(tx, rows.stream().map(row -> String.valueOf(row.get("uid"))).distinct().toList());
+    }
+
+    private void writeCanonicalEntityRows(TransactionContext tx, List<Map<String, Object>> rows) {
         Map<String, List<Map<String, Object>>> groups = new LinkedHashMap<>();
         for (Map<String, Object> row : rows) {
             @SuppressWarnings("unchecked")
@@ -133,6 +153,93 @@ public final class Neo4jGraphStore implements GraphStore {
                     "SET n:" + labelsClause(labels);
             tx.run(cypher, parameters("rows", group, "projectId", projectId)).consume();
         }
+    }
+
+    private void rebuildCanonicalEntities(TransactionContext tx, Collection<String> entityUids) {
+        List<String> uids = entityUids.stream().filter(Objects::nonNull).distinct().toList();
+        if (uids.isEmpty()) return;
+        List<Record> records = tx.run(
+                "MATCH (c:" + ENTITY_CONTRIBUTION_LABEL + ") " +
+                        "WHERE c.kg_project = $projectId AND c.kg_entity_uid IN $uids " +
+                        "RETURN c.kg_entity_uid AS uid, properties(c) AS props " +
+                        "ORDER BY c.kg_entity_uid, c.kg_source_id, c.kg_source_object, c.kg_source_key",
+                parameters("projectId", projectId, "uids", uids)).list();
+        Map<String, List<Map<String, Object>>> contributions = new LinkedHashMap<>();
+        for (Record record : records) {
+            contributions.computeIfAbsent(record.get("uid").asString(), ignored -> new ArrayList<>())
+                    .add(record.get("props").asMap());
+        }
+
+        List<Map<String, Object>> canonicalRows = new ArrayList<>();
+        for (String uid : uids) {
+            List<Map<String, Object>> values = contributions.getOrDefault(uid, List.of());
+            if (values.isEmpty()) {
+                deleteCanonicalWithoutContributions(tx, uid);
+            } else {
+                canonicalRows.add(canonicalEntityRow(uid, values));
+            }
+        }
+        if (!canonicalRows.isEmpty()) writeCanonicalEntityRows(tx, canonicalRows);
+    }
+
+    private Map<String, Object> canonicalEntityRow(String uid, List<Map<String, Object>> contributions) {
+        String classIri = null;
+        Object caption = null;
+        Map<String, Object> business = new LinkedHashMap<>();
+        List<String> sourceRefs = new ArrayList<>();
+        for (Map<String, Object> contribution : contributions) {
+            String contributionClass = String.valueOf(contribution.get("kg_class_iri"));
+            if (classIri == null) classIri = contributionClass;
+            else if (!classIri.equals(contributionClass)) {
+                throw new GraphStoreException("同一实体 UID 的 class contribution 冲突：uid=" + uid);
+            }
+            Object contributionCaption = contribution.get("kg_caption");
+            if (contributionCaption != null) {
+                if (caption == null) caption = contributionCaption;
+                else if (!Objects.deepEquals(caption, contributionCaption)) {
+                    throw new GraphStoreException("同一实体 UID 的 caption contribution 冲突：uid=" + uid);
+                }
+            }
+            sourceRefs.add(sourceRefToken(contribution));
+            for (Map.Entry<String, Object> property : contribution.entrySet()) {
+                if (property.getKey().startsWith("kg_")) continue;
+                Object previous = business.putIfAbsent(property.getKey(), property.getValue());
+                if (previous != null && !Objects.deepEquals(previous, property.getValue())) {
+                    throw new GraphStoreException("实体 contribution 属性冲突：uid=" + uid
+                            + ", property=" + property.getKey());
+                }
+            }
+        }
+
+        Map<String, Object> props = new LinkedHashMap<>(business);
+        props.put("kg_uid", uid);
+        props.put("kg_project", projectId);
+        props.put("kg_class_iri", classIri);
+        if (caption != null) props.put("kg_caption", caption);
+        props.put("kg_source_refs", List.copyOf(sourceRefs));
+        return Map.of(
+                "uid", uid,
+                "props", props,
+                "labels", List.copyOf(ontology.labelsForClass(classIri)));
+    }
+
+    private String sourceRefToken(Map<String, Object> contribution) {
+        return contribution.get("kg_source_id") + "/"
+                + contribution.get("kg_source_object") + "/"
+                + contribution.get("kg_source_key");
+    }
+
+    private void deleteCanonicalWithoutContributions(TransactionContext tx, String uid) {
+        List<Record> conflicts = tx.run(
+                "MATCH (n:" + ENTITY_LABEL + " {kg_project: $projectId, kg_uid: $uid})-[r]-() " +
+                        "RETURN r.kg_uid AS relationshipUid LIMIT 1",
+                parameters("projectId", projectId, "uid", uid)).list();
+        if (!conflicts.isEmpty()) {
+            throw new GraphStoreException("拒绝删除仍被关系引用且已无 contribution 的实体：uid=" + uid
+                    + ", relationshipUid=" + conflicts.get(0).get("relationshipUid").asString("<missing>"));
+        }
+        tx.run("MATCH (n:" + ENTITY_LABEL + " {kg_project: $projectId, kg_uid: $uid}) DELETE n",
+                parameters("projectId", projectId, "uid", uid)).consume();
     }
 
     private void writeRelationshipBatches(TransactionContext tx, List<Map<String, Object>> rows) {
@@ -202,6 +309,7 @@ public final class Neo4jGraphStore implements GraphStore {
         List<Map<String, Object>> entityRows = currentProjection.getEntities().stream().map(this::entityRow).toList();
         List<Map<String, Object>> relationshipRows = currentProjection.getRelationships().stream().map(this::relationshipRow).toList();
         List<String> currentEntityUids = currentProjection.getEntities().stream().map(GraphEntity::getUid).toList();
+        validateEntityRowsForSourceRef(sourceRef, entityRows);
 
         try (Session session = driver.session(sessionConfig)) {
             session.executeWrite(tx -> {
@@ -211,27 +319,21 @@ public final class Neo4jGraphStore implements GraphStore {
                         "WHERE r.kg_project = $projectId AND r.kg_source_id = $sourceId " +
                         "AND r.kg_source_object = $sourceObject AND r.kg_source_key = $sourceKey DELETE r", ref).consume();
 
-                List<Record> ownershipConflicts = tx.run("MATCH (n:" + ENTITY_LABEL + ") " +
-                        "WHERE n.kg_project = $projectId AND n.kg_source_id = $sourceId " +
-                        "AND n.kg_source_object = $sourceObject AND n.kg_source_key = $sourceKey " +
-                        "AND NOT n.kg_uid IN $currentEntityUids " +
-                        "MATCH (n)-[r]-() RETURN n.kg_uid AS uid, r.kg_uid AS relationshipUid LIMIT 1",
+                List<String> staleEntityUids = tx.run(
+                        "MATCH (c:" + ENTITY_CONTRIBUTION_LABEL + ") " +
+                                "WHERE c.kg_project = $projectId AND c.kg_source_id = $sourceId " +
+                                "AND c.kg_source_object = $sourceObject AND c.kg_source_key = $sourceKey " +
+                                "AND NOT c.kg_entity_uid IN $currentEntityUids " +
+                                "RETURN DISTINCT c.kg_entity_uid AS uid",
                         parameters("projectId", projectId,
                                 "sourceId", sourceRef.getSourceId(),
                                 "sourceObject", sourceRef.getObjectName(),
                                 "sourceKey", sourceRef.getSourceKey(),
-                                "currentEntityUids", currentEntityUids)).list();
-                if (!ownershipConflicts.isEmpty()) {
-                    Record conflict = ownershipConflicts.get(0);
-                    throw new GraphStoreException("拒绝删除仍被其他源记录关系引用的实体：uid="
-                            + conflict.get("uid").asString() + ", relationshipUid="
-                            + conflict.get("relationshipUid").asString("<missing>"));
-                }
-
-                tx.run("MATCH (n:" + ENTITY_LABEL + ") " +
-                        "WHERE n.kg_project = $projectId AND n.kg_source_id = $sourceId " +
-                        "AND n.kg_source_object = $sourceObject AND n.kg_source_key = $sourceKey " +
-                        "AND NOT n.kg_uid IN $currentEntityUids DELETE n",
+                                "currentEntityUids", currentEntityUids)).list(record -> record.get("uid").asString());
+                tx.run("MATCH (c:" + ENTITY_CONTRIBUTION_LABEL + ") " +
+                                "WHERE c.kg_project = $projectId AND c.kg_source_id = $sourceId " +
+                                "AND c.kg_source_object = $sourceObject AND c.kg_source_key = $sourceKey " +
+                                "AND NOT c.kg_entity_uid IN $currentEntityUids DELETE c",
                         parameters("projectId", projectId,
                                 "sourceId", sourceRef.getSourceId(),
                                 "sourceObject", sourceRef.getObjectName(),
@@ -239,6 +341,7 @@ public final class Neo4jGraphStore implements GraphStore {
                                 "currentEntityUids", currentEntityUids)).consume();
 
                 if (!entityRows.isEmpty()) writeEntityBatches(tx, entityRows);
+                if (!staleEntityUids.isEmpty()) rebuildCanonicalEntities(tx, staleEntityUids);
                 if (!relationshipRows.isEmpty()) writeRelationshipBatches(tx, relationshipRows);
                 return null;
             });
@@ -258,6 +361,9 @@ public final class Neo4jGraphStore implements GraphStore {
         requireUid(uid);
         try (Session session = driver.session(sessionConfig)) {
             session.executeWrite(tx -> {
+                tx.run("MATCH (c:" + ENTITY_CONTRIBUTION_LABEL +
+                                " {kg_entity_uid: $uid, kg_project: $projectId}) DELETE c",
+                        parameters("uid", uid, "projectId", projectId)).consume();
                 tx.run("MATCH (n:" + ENTITY_LABEL + " {kg_uid: $uid, kg_project: $projectId}) DETACH DELETE n",
                         parameters("uid", uid, "projectId", projectId)).consume();
                 return null;
@@ -301,6 +407,8 @@ public final class Neo4jGraphStore implements GraphStore {
     public void clearProject() {
         try (Session session = driver.session(sessionConfig)) {
             session.executeWrite(tx -> {
+                tx.run("MATCH (c:" + ENTITY_CONTRIBUTION_LABEL + " {kg_project: $projectId}) DELETE c",
+                        parameters("projectId", projectId)).consume();
                 tx.run("MATCH (n:" + ENTITY_LABEL + " {kg_project: $projectId}) DETACH DELETE n",
                         parameters("projectId", projectId)).consume();
                 return null;
@@ -335,13 +443,25 @@ public final class Neo4jGraphStore implements GraphStore {
 
     private Map<String, Object> entityRow(GraphEntity entity) {
         Map<String, Object> props = new LinkedHashMap<>(Neo4jValueNormalizer.normalizeProperties(entity.getProperties()));
-        props.put("kg_uid", entity.getUid());
         props.put("kg_project", projectId);
+        props.put("kg_entity_uid", entity.getUid());
         props.put("kg_class_iri", entity.getClassIri());
         if (entity.getCaption() != null) props.put("kg_caption", entity.getCaption());
         addProvenance(props, entity.getProvenance());
-        return Map.of("uid", entity.getUid(), "props", props,
-                "labels", List.copyOf(ontology.labelsForClass(entity.getClassIri())));
+        String sourceId = requiredContributionProvenance(props, "kg_source_id", entity.getUid());
+        String sourceObject = requiredContributionProvenance(props, "kg_source_object", entity.getUid());
+        String sourceKey = requiredContributionProvenance(props, "kg_source_key", entity.getUid());
+        props.put("kg_source_id", sourceId);
+        props.put("kg_source_object", sourceObject);
+        props.put("kg_source_key", sourceKey);
+        ontology.labelsForClass(entity.getClassIri());
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("uid", entity.getUid());
+        row.put("sourceId", sourceId);
+        row.put("sourceObject", sourceObject);
+        row.put("sourceKey", sourceKey);
+        row.put("props", props);
+        return row;
     }
 
     private Map<String, Object> relationshipRow(GraphRelationship relationship) {
@@ -372,6 +492,25 @@ public final class Neo4jGraphStore implements GraphStore {
         if (normalized != null) props.put(key, normalized);
     }
 
+    private String requiredContributionProvenance(Map<String, Object> props, String key, String uid) {
+        Object value = props.get(key);
+        if (value == null || String.valueOf(value).isBlank()) {
+            throw new GraphStoreException("实体 contribution 缺少 provenance：uid=" + uid + ", field=" + key);
+        }
+        return String.valueOf(value);
+    }
+
+    private void validateEntityRowsForSourceRef(SourceRef sourceRef, List<Map<String, Object>> rows) {
+        for (Map<String, Object> row : rows) {
+            if (!sourceRef.getSourceId().equals(row.get("sourceId"))
+                    || !sourceRef.getObjectName().equals(row.get("sourceObject"))
+                    || !sourceRef.getSourceKey().equals(row.get("sourceKey"))) {
+                throw new GraphStoreException("实体 contribution provenance 与 replaceProjection SourceRef 不一致：uid="
+                        + row.get("uid"));
+            }
+        }
+    }
+
     private GraphEntity entityFromProperties(Map<String, Object> all) {
         Map<String, Object> business = new LinkedHashMap<>(all);
         String uid = String.valueOf(business.remove("kg_uid"));
@@ -380,6 +519,7 @@ public final class Neo4jGraphStore implements GraphStore {
         business.remove("kg_project");
 
         Map<String, Object> provenance = new LinkedHashMap<>();
+        moveTechnical(business, provenance, "kg_source_refs", "sourceRefs");
         moveTechnical(business, provenance, "kg_source_id", "sourceId");
         moveTechnical(business, provenance, "kg_source_object", "sourceObject");
         moveTechnical(business, provenance, "kg_source_key", "sourceKey");

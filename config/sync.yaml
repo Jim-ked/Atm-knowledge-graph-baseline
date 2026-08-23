@@ -6,3 +6,10 @@ sync:
 
   # ChangeEvent 只表示“哪个源记录变化”；业务事实必须回读权威源数据。
   eventCarriesAuthoritativeData: false
+
+  # initialFullImport 是能力/策略标记；服务启动不会自动 clearProject/fullRebuild。
+  polling:
+    enabled: false
+    intervalSeconds: 30
+    # 启用后每项必须显式配置 sourceId、sourceObject、initialWatermark。
+    scopes: []
