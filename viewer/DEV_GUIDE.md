@@ -17,10 +17,6 @@
 | G6 数据、事件和 state 映射 | `src/adapters/g6-adapter.js` |
 | G6 persistent physics | `src/adapters/g6-persistent-simulation.js`（当前冻结，修改前先重新建立物理 Gate） |
 | 关系平行边、双向边、self-loop 几何 | `src/adapters/g6-visual-geometry.js` 与 `g6-poc-config.js` transforms |
-| Sigma Adapter | `src/adapters/sigma-adapter.js` |
-| Sigma Graphology 映射、parallel curvature、reducers | `src/adapters/sigma-graph.js` |
-| Sigma 插件/版本/许可证矩阵 | `SIGMA_PLUGIN_MATRIX.md` |
-| Cytoscape Adapter | `src/adapters/cytoscape-adapter.js` |
 | 正常 / Debug 页面显隐 | `index.html` 的 `data-debug-only`，判断逻辑在 `src/app.js` 的 `isDebug` |
 | 正式页面结构与样式 | `index.html`、`src/styles.css` |
 
@@ -57,10 +53,4 @@ npm run build
 npm run gate:viewer
 ```
 
-`gate:viewer` 只验证当前 G6 正式入口、Debug 隔离、标签模式和交互；不运行三内核规模 benchmark。
-
-## Sigma Debug 验证
-
-Sigma 只在 `?debug=true` 中切换。Debug Workbench 的 Sigma LayoutPolicy 可选 `AUTO`、`FORCE`、`FORCE_ATLAS2`、`NOVERLAP`、`KEEP`。Sigma v3 使用 Graphology id、node-border、edge-curve、edge events、nodeReducer/edgeReducer 和官方 v3 drag 事件；不要使用 Sigma v4 的 `enableNodeDrag` 或 v4 state API。
-
-Sigma 的 physics/layout 与 G6 persistent d3-force 是两套备用实现：Sigma 小图 Force、大图 FA2 Worker，布局后 Noverlap；不要复制或改造 G6 simulation 来服务 Sigma。
+`gate:viewer` 只验证当前 G6 正式入口、Debug 隔离、标签模式和交互。

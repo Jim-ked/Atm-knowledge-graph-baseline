@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -111,15 +112,25 @@ public final class JdbcPollingTriggerAdapter implements TriggerAdapter {
         List<Discovery> discoveries = new ArrayList<>();
         Instant latest = since;
 
-        for (SourceRecord record : adapter.scanChangedSince(scope.objectName(), since)) {
-            validateDiscoveryScope(record, scope);
-            Instant timestamp = record.getSourceTimestamp();
-            if (timestamp == null || !timestamp.isAfter(since)) {
-                throw new IllegalStateException("JDBC polling sourceTimestamp 必须晚于当前 watermark："
-                        + scope.display() + "/" + record.getSourceKey());
+        Iterator<SourceRecord> iterator = adapter.scanChangedSince(scope.objectName(), since).iterator();
+        Throwable failure = null;
+        try {
+            while (iterator.hasNext()) {
+                SourceRecord record = iterator.next();
+                validateDiscoveryScope(record, scope);
+                Instant timestamp = record.getSourceTimestamp();
+                if (timestamp == null || !timestamp.isAfter(since)) {
+                    throw new IllegalStateException("JDBC polling sourceTimestamp 必须晚于当前 watermark："
+                            + scope.display() + "/" + record.getSourceKey());
+                }
+                discoveries.add(new Discovery(record.getSourceKey(), timestamp));
+                if (timestamp.isAfter(latest)) latest = timestamp;
             }
-            discoveries.add(new Discovery(record.getSourceKey(), timestamp));
-            if (timestamp.isAfter(latest)) latest = timestamp;
+        } catch (RuntimeException | Error ex) {
+            failure = ex;
+            throw ex;
+        } finally {
+            closeIterator(iterator, failure);
         }
 
         for (Discovery discovery : discoveries) {
@@ -127,6 +138,16 @@ public final class JdbcPollingTriggerAdapter implements TriggerAdapter {
                     discovery.sourceKey(), ChangeEvent.Operation.UPSERT, discovery.timestamp()));
         }
         if (!discoveries.isEmpty()) watermarks.put(scope, latest);
+    }
+
+    private static void closeIterator(Iterator<?> iterator, Throwable failure) {
+        if (!(iterator instanceof AutoCloseable closeable)) return;
+        try {
+            closeable.close();
+        } catch (Exception closeFailure) {
+            if (failure != null) failure.addSuppressed(closeFailure);
+            else throw new IllegalStateException("JDBC polling iterator 关闭失败", closeFailure);
+        }
     }
 
     private void runScheduledPoll() {

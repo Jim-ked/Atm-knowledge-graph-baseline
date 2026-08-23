@@ -18,7 +18,6 @@ try {
   const response = await page.goto(BASE, { waitUntil: 'networkidle' });
   require(response?.status() === 200, `viewer HTTP ${response?.status()}`);
   await page.waitForFunction(() => window.__ATMKG_PHASE5__);
-  await page.evaluate(() => window.__ATMKG_PHASE5__.switchEngine('g6'));
 
   async function expand(name, kind, restartPreset) {
     await page.evaluate(preset => window.__ATMKG_PHASE5__.loadPreset(preset), name);

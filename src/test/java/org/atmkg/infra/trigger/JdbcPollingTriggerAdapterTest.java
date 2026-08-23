@@ -8,9 +8,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -114,6 +116,23 @@ class JdbcPollingTriggerAdapterTest {
     }
 
     @Test
+    void failedConsumerStillClosesChangedRecordIterator() {
+        FakeJdbcSource source = new FakeJdbcSource();
+        CloseTrackingIterable changed = new CloseTrackingIterable(
+                List.of(record("airport-base", "ZBAA", "airport", T1)));
+        source.changedRecords = changed;
+        JdbcPollingTriggerAdapter trigger = trigger(source,
+                List.of(new JdbcPollingTriggerAdapter.PollingScope("jdbc-main", "airport-base", T0)));
+
+        assertThrows(IllegalStateException.class, () -> trigger.pollOnce(event -> {
+            throw new IllegalStateException("consumer failure");
+        }));
+
+        assertTrue(changed.closed);
+        assertEquals(T0, trigger.watermark("jdbc-main", "airport-base"));
+    }
+
+    @Test
     void pollingGraphWriteFailurePublishesNoNoticeUntilSuccessfulRetry() {
         FakeJdbcSource source = new FakeJdbcSource();
         source.discovered.put("airport-base", List.of(record("airport-base", "ZBAA", "scan-old", T1)));
@@ -183,6 +202,7 @@ class JdbcPollingTriggerAdapterTest {
         final Map<String, List<SourceRecord>> discovered = new LinkedHashMap<>();
         final Map<String, SourceRecord> authoritative = new LinkedHashMap<>();
         final Map<String, List<Instant>> scannedSince = new LinkedHashMap<>();
+        Iterable<SourceRecord> changedRecords;
         int readByKeyCount;
 
         @Override
@@ -199,10 +219,35 @@ class JdbcPollingTriggerAdapterTest {
         @Override
         public Iterable<SourceRecord> scanChangedSince(String objectName, Instant since) {
             scannedSince.computeIfAbsent(objectName, ignored -> new ArrayList<>()).add(since);
+            if (changedRecords != null) return changedRecords;
             return discovered.getOrDefault(objectName, List.of()).stream()
                     .filter(record -> record.getSourceTimestamp() == null
                             || record.getSourceTimestamp().isAfter(since))
                     .toList();
+        }
+    }
+
+    private static final class CloseTrackingIterable implements Iterable<SourceRecord> {
+        private final List<SourceRecord> records;
+        private boolean closed;
+
+        private CloseTrackingIterable(List<SourceRecord> records) {
+            this.records = records;
+        }
+
+        @Override
+        public Iterator<SourceRecord> iterator() {
+            return new CloseTrackingIterator();
+        }
+
+        private final class CloseTrackingIterator implements Iterator<SourceRecord>, AutoCloseable {
+            private int index;
+            @Override public boolean hasNext() { return index < records.size(); }
+            @Override public SourceRecord next() {
+                if (!hasNext()) throw new NoSuchElementException();
+                return records.get(index++);
+            }
+            @Override public void close() { closed = true; }
         }
     }
 

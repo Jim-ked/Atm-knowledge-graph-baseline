@@ -53,10 +53,8 @@ select { height: 30px; border: 1px solid #aeb8c5; border-radius: 3px; background
   border-bottom: 1px solid var(--line);
 }
 .graph-footer { min-height: 36px; border: 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
-.engine-switch, .graph-actions, .display-controls { display: flex; gap: 6px; align-items: center; }
+.graph-actions, .display-controls { display: flex; gap: 6px; align-items: center; }
 .display-controls label { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
-.engine-switch { padding: 7px 10px; border-bottom: 1px solid var(--line); background: #f7fafc; }
-.engine-switch button[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: white; }
 .debug-panel { border-bottom: 1px solid var(--line); background: #f7fafc; }
 .debug-panel > summary { cursor: pointer; padding: 8px 10px; color: #17406f; font-size: 12px; font-weight: 650; }
 .debug-panel[open] > summary { border-bottom: 1px solid var(--line); }
@@ -75,10 +73,6 @@ select { height: 30px; border: 1px solid #aeb8c5; border-radius: 3px; background
 .force-fields label { display: flex; justify-content: space-between; align-items: center; color: var(--muted); }
 .force-fields button { grid-column: 1 / -1; }
 .g6-poc-controls[hidden] { display: none; }
-.cytoscape-workbench { min-height: 42px; padding: 7px 10px; border-bottom: 1px solid var(--line); background: #f7fafc; display: flex; align-items: center; gap: 10px; font-size: 11px; flex-wrap: wrap; }
-.cytoscape-workbench label { display: flex; align-items: center; gap: 6px; color: var(--muted); }
-.cytoscape-tooltip { position: absolute; z-index: 50; max-width: 280px; padding: 6px 8px; border: 1px solid #94a3b8; border-radius: 3px; background: #fff; color: var(--ink); box-shadow: 0 3px 12px #0f172a22; font-size: 11px; pointer-events: none; }
-.cytoscape-navigator-container { position: absolute; z-index: 15; right: 12px; bottom: 44px; width: 160px; height: 110px; border: 1px solid var(--line); background: #fff; box-shadow: 0 2px 8px #0f172a22; }
 .details { padding: 0 14px; height: calc(100vh - 154px); min-height: 574px; overflow: auto; }
 .details section { padding: 13px 0 16px; border-bottom: 1px solid var(--line); }
 .details section:last-child { border: 0; }

@@ -6,10 +6,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Optional;
+import java.util.function.Supplier;
 import org.atmkg.core.model.ChangeEvent;
 import org.atmkg.core.error.SyncException;
 import org.atmkg.core.model.GraphEntity;
@@ -124,6 +128,70 @@ class DefaultSyncServiceTest {
     }
 
     @Test
+    void recentEventCacheIsBoundedAndEvictedIdsCanBeProcessedAgain() {
+        RecordingStore store = new RecordingStore();
+        DefaultSyncService service = new DefaultSyncService(
+                Map.of("fixture", adapter(Optional.of(RECORD))),
+                r -> new MappingResult(List.of(), List.of()), store);
+        ChangeEvent oldest = new ChangeEvent("E-0", "fixture", "OBJECT", "K1",
+                ChangeEvent.Operation.UPSERT, Instant.now());
+
+        service.handle(oldest);
+        service.handle(oldest);
+        for (int index = 1; index <= DefaultSyncService.RECENT_EVENT_LIMIT; index++) {
+            service.handle(new ChangeEvent("E-" + index, "fixture", "OBJECT", "K1",
+                    ChangeEvent.Operation.UPSERT, Instant.now()));
+        }
+        service.handle(oldest);
+
+        assertEquals(DefaultSyncService.RECENT_EVENT_LIMIT + 2, store.replaceCount);
+    }
+
+    @Test
+    void fullSyncClosesReadAllIteratorWhenMappingFails() {
+        CloseTrackingIterable records = new CloseTrackingIterable(List.of(RECORD));
+        DefaultSyncService service = new DefaultSyncService(
+                Map.of("fixture", adapter(Optional.of(RECORD), () -> records, List::of)),
+                record -> { throw new IllegalStateException("mapping failure"); }, new RecordingStore());
+
+        assertThrows(SyncException.class, () -> service.fullSync("fixture", "OBJECT"));
+
+        assertTrue(records.closed);
+    }
+
+    @Test
+    void fullSyncClosesSecondPassIteratorWhenGraphStoreFails() {
+        CloseTrackingIterable secondPass = new CloseTrackingIterable(List.of(RECORD));
+        ArrayDeque<Iterable<SourceRecord>> passes = new ArrayDeque<>();
+        passes.add(List.of(RECORD));
+        passes.add(secondPass);
+        RecordingStore store = new RecordingStore();
+        store.failNextReplace = true;
+        DefaultSyncService service = new DefaultSyncService(
+                Map.of("fixture", adapter(Optional.of(RECORD), passes::removeFirst, List::of)),
+                record -> new MappingResult(List.of(), List.of()), store);
+
+        assertThrows(IllegalStateException.class, () -> service.fullSync("fixture", "OBJECT"));
+
+        assertTrue(secondPass.closed);
+    }
+
+    @Test
+    void compensationClosesIteratorWhenRecordScopeIsInvalid() {
+        SourceRecord invalid = new SourceRecord(
+                "other", "OBJECT", "K1", Map.of(), Instant.parse("2026-08-21T01:00:00Z"));
+        CloseTrackingIterable changed = new CloseTrackingIterable(List.of(invalid));
+        DefaultSyncService service = new DefaultSyncService(
+                Map.of("fixture", adapter(Optional.of(RECORD), List::of, () -> changed)),
+                record -> new MappingResult(List.of(), List.of()), new RecordingStore());
+
+        assertThrows(SyncException.class, () -> service.compensateSince(
+                "fixture", "OBJECT", Instant.parse("2026-08-21T00:00:00Z")));
+
+        assertTrue(changed.closed);
+    }
+
+    @Test
     void failedEventIsNotMarkedProcessedAndCanBeRetried() {
         RecordingStore store = new RecordingStore();
         store.failNextReplace = true;
@@ -182,11 +250,42 @@ class DefaultSyncServiceTest {
     }
 
     private SourceAdapter adapter(Optional<SourceRecord> byKey) {
+        return adapter(byKey, () -> byKey.map(List::of).orElseGet(List::of),
+                () -> byKey.map(List::of).orElseGet(List::of));
+    }
+
+    private SourceAdapter adapter(Optional<SourceRecord> byKey,
+                                  Supplier<Iterable<SourceRecord>> readAll,
+                                  Supplier<Iterable<SourceRecord>> changed) {
         return new SourceAdapter() {
-            public Iterable<SourceRecord> readAll(String objectName) { return byKey.map(List::of).orElseGet(List::of); }
+            public Iterable<SourceRecord> readAll(String objectName) { return readAll.get(); }
             public Optional<SourceRecord> readByKey(String objectName, String sourceKey) { return byKey; }
-            public Iterable<SourceRecord> scanChangedSince(String objectName, Instant since) { return byKey.map(List::of).orElseGet(List::of); }
+            public Iterable<SourceRecord> scanChangedSince(String objectName, Instant since) { return changed.get(); }
         };
+    }
+
+    private static final class CloseTrackingIterable implements Iterable<SourceRecord> {
+        private final List<SourceRecord> records;
+        private boolean closed;
+
+        private CloseTrackingIterable(List<SourceRecord> records) {
+            this.records = records;
+        }
+
+        @Override
+        public Iterator<SourceRecord> iterator() {
+            return new CloseTrackingIterator();
+        }
+
+        private final class CloseTrackingIterator implements Iterator<SourceRecord>, AutoCloseable {
+            private int index;
+            @Override public boolean hasNext() { return index < records.size(); }
+            @Override public SourceRecord next() {
+                if (!hasNext()) throw new NoSuchElementException();
+                return records.get(index++);
+            }
+            @Override public void close() { closed = true; }
+        }
     }
 
     private static final class RecordingStore implements GraphStore {

@@ -24,7 +24,7 @@ test('replace, selection and engine-neutral snapshot preserve GraphDTO fields', 
   assert.deepEqual(snapshot.state.highlightedRelationshipIds, ['r1']);
   snapshot.nodes[0].caption = 'mutated';
   assert.equal(model.snapshot().nodes[0].caption, 'A');
-  assert.equal(Object.keys(snapshot.nodes[0]).some(key => /g6|cytoscape|sigma/i.test(key)), false);
+  assert.equal(Object.keys(snapshot.nodes[0]).some(key => /viewer|g6/i.test(key)), false);
 });
 
 test('merge and patch add, update and remove without dangling relationships', () => {

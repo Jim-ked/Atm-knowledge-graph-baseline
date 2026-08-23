@@ -63,31 +63,11 @@
           </div>
         </div>
         <details id="debug-panel" class="debug-panel debug-block" data-debug-only hidden open>
-          <summary>Debug Panel · 可替换内核与插件验证</summary>
-        <div id="engine-switch" class="engine-switch debug-block" role="group" aria-label="图形内核"
-             data-debug-only hidden>
-          <span class="group-label">Debug 内核</span>
-          <button data-engine="g6" aria-pressed="true">G6</button>
-          <button data-engine="cytoscape" aria-pressed="false">Cytoscape</button>
-          <button data-engine="sigma" aria-pressed="false">Sigma</button>
-          <button id="incremental">增量 add/update/remove</button>
-        </div>
-        <div id="sigma-workbench" class="sigma-workbench debug-block" data-debug-only hidden>
-          <strong>Sigma v3 Debug</strong>
-          <label>LayoutPolicy
-            <select id="sigma-layout-policy">
-              <option value="AUTO" selected>AUTO</option><option value="D3_TOPOLOGY_FORCE">D3 topology force</option>
-              <option value="GRAPHOLOGY_FORCE">Graphology Force (debug)</option>
-              <option value="FORCE_ATLAS2">ForceAtlas2 Worker</option>
-              <option value="NOVERLAP">Noverlap</option><option value="KEEP">Keep</option>
-            </select>
-          </label>
-          <button id="sigma-fit-neighborhood" type="button">适应邻域</button>
-          <span id="sigma-state" class="muted">Sigma v3 · Graphology</span>
-        </div>
+          <summary>Debug Panel · G6 验证</summary>
         <form id="g6-poc-controls" class="g6-poc-controls" aria-label="G6 Debug Workbench"
               data-debug-only hidden>
           <strong>G6 Debug Workbench</strong>
+          <button id="incremental" type="button">增量 add/update/remove</button>
           <label>视觉档位
             <select id="g6-visual-preset"><option value="light">轻量</option>
               <option value="balanced" selected>均衡</option><option value="readable">易读</option></select>
@@ -119,23 +99,6 @@
           </details>
           <span id="g6-poc-state" class="muted">均衡 · visual node 40px</span>
         </form>
-        <div id="cytoscape-workbench" class="cytoscape-workbench debug-block" data-debug-only hidden>
-          <strong>Cytoscape Debug</strong>
-          <label>LayoutPolicy
-            <select id="cytoscape-layout-policy">
-              <option value="AUTO" selected>AUTO</option><option value="FCOSE">fCoSE</option>
-              <option value="D3_FORCE">D3-force</option><option value="COLA">Cola</option>
-              <option value="ELK">ELK</option><option value="DAGRE">Dagre</option>
-              <option value="CISE">CiSE</option><option value="AVSDF">AVSDF</option>
-              <option value="SPREAD">Spread</option><option value="KEEP">Keep</option>
-            </select>
-          </label>
-          <button id="cytoscape-run-layout" type="button">运行布局</button>
-          <button id="cytoscape-fcose-probe" type="button">fCoSE constraints</button>
-          <button id="cytoscape-automove" type="button">Automove probe</button>
-          <button id="cytoscape-undo" type="button">Undo</button><button id="cytoscape-redo" type="button">Redo</button>
-          <span id="cytoscape-state" class="muted">Cytoscape 3.34.1</span>
-        </div>
         </details>
         <div id="graph" class="graph" aria-label="知识图谱画布"></div>
         <div class="graph-footer"><span id="graph-summary">0 nodes · 0 relationships</span>
@@ -162,8 +125,8 @@
           </div>
         </section>
         <section id="session-metrics" data-debug-only hidden>
-          <h2>Debug 会话比较</h2>
-          <table><thead><tr><th>内核</th><th>数据</th><th>渲染 ms</th></tr></thead><tbody id="metrics"></tbody></table>
+          <h2>G6 Debug 会话</h2>
+          <table><thead><tr><th>渲染器</th><th>数据</th><th>渲染 ms</th></tr></thead><tbody id="metrics"></tbody></table>
         </section>
       </aside>
     </section>

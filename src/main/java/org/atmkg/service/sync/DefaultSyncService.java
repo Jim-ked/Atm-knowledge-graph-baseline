@@ -2,12 +2,11 @@ package org.atmkg.service.sync;
 
 import java.time.Instant;
 import java.util.Collection;
-import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.function.Consumer;
 import org.atmkg.core.error.SyncException;
 import org.atmkg.core.model.ChangeEvent;
@@ -25,11 +24,14 @@ import org.atmkg.core.spi.SyncService;
  * Change events identify records only; current authoritative facts are always re-read through SourceAdapter.
  */
 public final class DefaultSyncService implements SyncService {
+    static final int RECENT_EVENT_LIMIT = 4096;
+
     private final Map<String, SourceAdapter> adapters;
     private final MappingEngine mappingEngine;
     private final GraphStore graphStore;
     private final Consumer<GraphChangeNotice> noticeListener;
-    private final Set<String> processedEventIds = new HashSet<>();
+    /** 仅用于本进程近期重复抑制；有界、非持久化，不提供 exactly-once 保证。 */
+    private final Map<String, Boolean> recentEventIds = new LinkedHashMap<>(16, 0.75f, true);
 
     public DefaultSyncService(Map<String, SourceAdapter> adapters, MappingEngine mappingEngine, GraphStore graphStore) {
         this(adapters, mappingEngine, graphStore, notice -> {});
@@ -47,7 +49,7 @@ public final class DefaultSyncService implements SyncService {
     @Override
     public synchronized void handle(ChangeEvent event) {
         Objects.requireNonNull(event, "event");
-        if (processedEventIds.contains(event.getEventId())) return;
+        if (recentEventIds.get(event.getEventId()) != null) return;
         SourceRef ref = new SourceRef(event.getSourceId(), event.getObjectName(), event.getSourceKey());
         if (event.getOperation() == ChangeEvent.Operation.DELETE) {
             graphStore.deleteProjection(ref);
@@ -58,7 +60,7 @@ public final class DefaultSyncService implements SyncService {
             result.ifPresent(mapped -> noticeListener.accept(
                     GraphChangeNotice.forUpsert(ref, mapped, Instant.now())));
         }
-        processedEventIds.add(event.getEventId());
+        rememberProcessed(event.getEventId());
     }
 
     @Override
@@ -87,28 +89,28 @@ public final class DefaultSyncService implements SyncService {
     }
 
     private void writeEntityEndpoints(SourceAdapter adapter, String sourceId, String objectName) {
-        for (SourceRecord record : adapter.readAll(objectName)) {
+        consumeRecords(adapter.readAll(objectName), record -> {
             validateRecordScope(record, sourceId, objectName);
             MappingResult result = map(record);
             graphStore.upsertEntities(result.getEntities());
-        }
+        });
     }
 
     private void replaceCurrentRecords(SourceAdapter adapter, String sourceId, String objectName) {
-        for (SourceRecord record : adapter.readAll(objectName)) {
+        consumeRecords(adapter.readAll(objectName), record -> {
             validateRecordScope(record, sourceId, objectName);
             replace(record);
-        }
+        });
     }
 
     @Override
     public void compensateSince(String sourceId, String objectName, Instant since) {
         Objects.requireNonNull(since, "since");
         SourceAdapter adapter = adapter(sourceId);
-        for (SourceRecord record : adapter.scanChangedSince(objectName, since)) {
+        consumeRecords(adapter.scanChangedSince(objectName, since), record -> {
             validateRecordScope(record, sourceId, objectName);
             replace(record);
-        }
+        });
     }
 
     @Override
@@ -146,6 +148,37 @@ public final class DefaultSyncService implements SyncService {
             throw new SyncException("映射失败：" + record.getSourceId() + "/" + record.getObjectName()
                     + "/" + record.getSourceKey(), ex);
         }
+    }
+
+    private void consumeRecords(Iterable<SourceRecord> records, Consumer<SourceRecord> consumer) {
+        Iterator<SourceRecord> iterator = Objects.requireNonNull(records, "records").iterator();
+        Throwable failure = null;
+        try {
+            while (iterator.hasNext()) consumer.accept(iterator.next());
+        } catch (RuntimeException | Error ex) {
+            failure = ex;
+            throw ex;
+        } finally {
+            closeIterator(iterator, failure);
+        }
+    }
+
+    private static void closeIterator(Iterator<?> iterator, Throwable failure) {
+        if (!(iterator instanceof AutoCloseable closeable)) return;
+        try {
+            closeable.close();
+        } catch (Exception closeFailure) {
+            if (failure != null) failure.addSuppressed(closeFailure);
+            else throw new SyncException("SourceAdapter iterator 关闭失败", closeFailure);
+        }
+    }
+
+    private void rememberProcessed(String eventId) {
+        recentEventIds.put(eventId, Boolean.TRUE);
+        if (recentEventIds.size() <= RECENT_EVENT_LIMIT) return;
+        Iterator<String> oldest = recentEventIds.keySet().iterator();
+        oldest.next();
+        oldest.remove();
     }
 
     private SourceAdapter adapter(String sourceId) {

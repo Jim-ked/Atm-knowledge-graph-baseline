@@ -43,7 +43,6 @@ try {
   await debugPage.waitForFunction(() => window.__ATMKG_PHASE5__);
   results.shell.debug = await debugPage.evaluate(() => ({
     debug: document.body.dataset.debug,
-    engineSwitchVisible: !document.querySelector('#engine-switch')?.hidden,
     scaleVisible: !document.querySelector('#scale-controls')?.hidden,
     pocVisible: !document.querySelector('#g6-poc-controls')?.hidden,
     metricsVisible: !document.querySelector('#session-metrics')?.hidden
@@ -160,7 +159,7 @@ try {
 
   const snapshot = await page.evaluate(() => window.__ATMKG_PHASE5__.model.snapshot());
   const serialized = JSON.stringify(snapshot.nodes) + JSON.stringify(snapshot.relationships);
-  results.graphDto.viewerSpecificFields = (serialized.match(/viewer|g6|cytoscape|sigma/gi) || []).length;
+  results.graphDto.viewerSpecificFields = (serialized.match(/viewer|g6/gi) || []).length;
   require(results.graphDto.viewerSpecificFields === 0, 'GraphDTO contains viewer-specific fields');
   require(consoleErrors.length === 0, `console errors: ${consoleErrors.join(' | ')}`);
   require(pageErrors.length === 0, `page errors: ${pageErrors.join(' | ')}`);

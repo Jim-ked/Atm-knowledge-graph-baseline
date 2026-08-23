@@ -23,7 +23,6 @@ try {
   const response = await page.goto(BASE, { waitUntil: 'networkidle' });
   require(response?.status() === 200, `viewer HTTP ${response?.status()}`);
   await page.waitForFunction(() => window.__ATMKG_PHASE5__);
-  await page.evaluate(() => window.__ATMKG_PHASE5__.switchEngine('g6'));
   await mkdir('test-results/g6-poc', { recursive: true });
 
   for (const [name, expected] of Object.entries(EXPECTED)) {
