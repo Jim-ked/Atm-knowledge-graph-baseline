@@ -10,3 +10,5 @@ config/*.local.yaml
 releases/
 viewer/node_modules/
 viewer/test-results/
+/runtime/state/*.json
+/runtime/state/*.tmp

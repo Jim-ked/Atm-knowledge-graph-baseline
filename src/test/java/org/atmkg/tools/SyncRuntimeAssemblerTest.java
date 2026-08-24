@@ -72,6 +72,7 @@ class SyncRuntimeAssemblerTest {
                   polling:
                     enabled: true
                     intervalSeconds: 30
+                    lookbackSeconds: 5
                     scopes:
                       - sourceId: jdbc-main
                         sourceObject: missing-object
@@ -102,6 +103,7 @@ class SyncRuntimeAssemblerTest {
                   polling:
                     enabled: false
                     intervalSeconds: 30
+                    lookbackSeconds: 5
                     scopes: []
                 """;
     }

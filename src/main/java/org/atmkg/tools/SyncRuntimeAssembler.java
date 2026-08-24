@@ -20,6 +20,7 @@ import org.atmkg.infra.source.SourceAdapterFactory;
 import org.atmkg.infra.source.config.ConfiguredSource;
 import org.atmkg.infra.source.config.SourceConfig;
 import org.atmkg.infra.trigger.JdbcPollingTriggerAdapter;
+import org.atmkg.infra.trigger.PollingCheckpointStore;
 import org.atmkg.service.sync.DefaultSyncService;
 import org.atmkg.service.sync.SyncRuntime;
 import org.atmkg.service.sync.SyncRuntimeConfig;
@@ -130,7 +131,8 @@ final class SyncRuntimeAssembler {
                         scope.sourceId(), scope.sourceObject(), scope.initialWatermark()))
                 .toList();
         JdbcPollingTriggerAdapter polling = new JdbcPollingTriggerAdapter(
-                adapters, scopes, plan.sync().getPollingInterval());
+                adapters, scopes, plan.sync().getPollingInterval(), plan.sync().getPollingLookback(),
+                new PollingCheckpointStore(plan.root().resolve(PollingCheckpointStore.DEFAULT_RELATIVE_PATH)));
         return new SyncAssembly(syncService, SyncRuntime.enabled(syncService, polling));
     }
 

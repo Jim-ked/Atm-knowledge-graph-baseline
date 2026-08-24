@@ -26,6 +26,7 @@ class SyncRuntimeConfigTest {
                   polling:
                     enabled: false
                     intervalSeconds: 30
+                    lookbackSeconds: 5
                     scopes: []
                 """);
 
@@ -35,6 +36,7 @@ class SyncRuntimeConfigTest {
         assertTrue(config.isIncrementalEnabled());
         assertFalse(config.isPollingEnabled());
         assertEquals(30, config.getPollingInterval().toSeconds());
+        assertEquals(5, config.getPollingLookback().toSeconds());
         assertTrue(config.getPollingScopes().isEmpty());
     }
 
@@ -50,6 +52,7 @@ class SyncRuntimeConfigTest {
                   polling:
                     enabled: true
                     intervalSeconds: 30
+                    lookbackSeconds: 5
                     scopes:
                       - sourceId: jdbc-main
                         sourceObject: airport-base
@@ -73,6 +76,7 @@ class SyncRuntimeConfigTest {
                   polling:
                     enabled: true
                     intervalSeconds: 15
+                    lookbackSeconds: 7
                     scopes:
                       - sourceId: jdbc-main
                         sourceObject: airport-base
@@ -83,6 +87,29 @@ class SyncRuntimeConfigTest {
 
         assertEquals(Instant.parse("2026-08-23T00:00:00Z"),
                 config.getPollingScopes().get(0).initialWatermark());
+        assertEquals(7, config.getPollingLookback().toSeconds());
+    }
+
+    @Test
+    void rejectsNegativeLookback() throws Exception {
+        Path file = write("""
+                sync:
+                  initialFullImport: true
+                  incremental: true
+                  compensation: true
+                  manualResync: true
+                  eventCarriesAuthoritativeData: false
+                  polling:
+                    enabled: false
+                    intervalSeconds: 30
+                    lookbackSeconds: -1
+                    scopes: []
+                """);
+
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                () -> SyncRuntimeConfig.load(file));
+
+        assertTrue(failure.getMessage().contains("lookbackSeconds"));
     }
 
     private Path write(String yaml) throws Exception {

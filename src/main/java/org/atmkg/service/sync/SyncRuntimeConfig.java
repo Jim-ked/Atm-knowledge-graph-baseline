@@ -19,7 +19,8 @@ public final class SyncRuntimeConfig {
     private static final Set<String> SYNC_FIELDS = Set.of(
             "initialFullImport", "incremental", "compensation", "manualResync",
             "eventCarriesAuthoritativeData", "polling");
-    private static final Set<String> POLLING_FIELDS = Set.of("enabled", "intervalSeconds", "scopes");
+    private static final Set<String> POLLING_FIELDS = Set.of(
+            "enabled", "intervalSeconds", "lookbackSeconds", "scopes");
     private static final Set<String> SCOPE_FIELDS = Set.of("sourceId", "sourceObject", "initialWatermark");
 
     private final boolean initialFullImport;
@@ -27,17 +28,20 @@ public final class SyncRuntimeConfig {
     private final boolean compensation;
     private final boolean manualResync;
     private final Duration pollingInterval;
+    private final Duration pollingLookback;
     private final boolean pollingEnabled;
     private final List<PollingScope> pollingScopes;
 
     private SyncRuntimeConfig(boolean initialFullImport, boolean incremental, boolean compensation,
-                              boolean manualResync, Duration pollingInterval, boolean pollingEnabled,
+                              boolean manualResync, Duration pollingInterval, Duration pollingLookback,
+                              boolean pollingEnabled,
                               List<PollingScope> pollingScopes) {
         this.initialFullImport = initialFullImport;
         this.incremental = incremental;
         this.compensation = compensation;
         this.manualResync = manualResync;
         this.pollingInterval = pollingInterval;
+        this.pollingLookback = pollingLookback;
         this.pollingEnabled = pollingEnabled;
         this.pollingScopes = List.copyOf(pollingScopes);
     }
@@ -65,6 +69,7 @@ public final class SyncRuntimeConfig {
             rejectUnknown(polling, POLLING_FIELDS, "sync.polling");
             boolean pollingEnabled = bool(polling, "enabled");
             long intervalSeconds = positiveLong(polling, "intervalSeconds");
+            long lookbackSeconds = nonNegativeLong(polling, "lookbackSeconds");
             List<PollingScope> scopes = scopes(polling.get("scopes"));
             if (pollingEnabled && !incremental) {
                 throw new IllegalArgumentException("polling.enabled=true 要求 incremental=true");
@@ -73,7 +78,8 @@ public final class SyncRuntimeConfig {
                 throw new IllegalArgumentException("polling.enabled=true 时 scopes 不能为空");
             }
             return new SyncRuntimeConfig(initialFullImport, incremental, compensation, manualResync,
-                    Duration.ofSeconds(intervalSeconds), pollingEnabled, scopes);
+                    Duration.ofSeconds(intervalSeconds), Duration.ofSeconds(lookbackSeconds),
+                    pollingEnabled, scopes);
         } catch (IOException ex) {
             throw new IllegalArgumentException("同步配置读取失败：" + file, ex);
         }
@@ -126,6 +132,14 @@ public final class SyncRuntimeConfig {
         return value.longValue();
     }
 
+    private static long nonNegativeLong(JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        if (value == null || !value.isIntegralNumber() || !value.canConvertToLong() || value.longValue() < 0) {
+            throw new IllegalArgumentException(field + " 必须是大于等于 0 的整数");
+        }
+        return value.longValue();
+    }
+
     private static String text(JsonNode node, String field) {
         JsonNode value = node.get(field);
         if (value == null || !value.isTextual() || value.textValue().isBlank()) {
@@ -139,6 +153,7 @@ public final class SyncRuntimeConfig {
     public boolean isCompensationEnabled() { return compensation; }
     public boolean isManualResyncEnabled() { return manualResync; }
     public Duration getPollingInterval() { return pollingInterval; }
+    public Duration getPollingLookback() { return pollingLookback; }
     public boolean isPollingEnabled() { return pollingEnabled; }
     public List<PollingScope> getPollingScopes() { return pollingScopes; }
 

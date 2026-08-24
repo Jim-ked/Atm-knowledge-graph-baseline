@@ -1,9 +1,12 @@
 package org.atmkg.infra.trigger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -31,10 +34,12 @@ import org.atmkg.service.sync.GraphChangeNotice;
 import org.atmkg.service.change.GraphChangeNeighborhoodProjector;
 import org.atmkg.service.change.GraphChangeNeighborhoodResult;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class JdbcPollingTriggerAdapterTest {
     private static final Instant T0 = Instant.parse("2026-08-23T00:00:00Z");
     private static final Instant T1 = Instant.parse("2026-08-23T00:01:00Z");
+    @TempDir Path temp;
 
     @Test
     void discoversKeyThenSyncServiceRereadsAuthoritativeRecordAndAdvancesWatermark() {
@@ -69,7 +74,8 @@ class JdbcPollingTriggerAdapterTest {
 
         trigger.pollOnce(sync::handle);
 
-        assertEquals(List.of(T0, T1), source.scannedSince.get("airport-base"));
+        assertEquals(List.of(T0.minusSeconds(5), T1.minusSeconds(5)),
+                source.scannedSince.get("airport-base"));
         assertEquals(1, source.readByKeyCount);
         assertEquals(1, store.replaceCount);
         assertEquals(1, notices.size());
@@ -89,8 +95,90 @@ class JdbcPollingTriggerAdapterTest {
 
         assertEquals(T1, trigger.watermark("jdbc-main", "airport-base"));
         assertEquals(routeTime, trigger.watermark("jdbc-main", "route-row"));
-        assertEquals(List.of(T0), source.scannedSince.get("airport-base"));
-        assertEquals(List.of(T0), source.scannedSince.get("route-row"));
+        assertEquals(List.of(T0.minusSeconds(5)), source.scannedSince.get("airport-base"));
+        assertEquals(List.of(T0.minusSeconds(5)), source.scannedSince.get("route-row"));
+    }
+
+    @Test
+    void persistedCheckpointOverridesInitialWatermarkAndIsRestoredAfterRestart() {
+        PollingCheckpointStore checkpoints = checkpointStore();
+        checkpoints.save("jdbc-main", "airport-base", T1);
+        Instant next = T1.plusSeconds(30);
+        FakeJdbcSource source = new FakeJdbcSource();
+        source.discovered.put("airport-base", List.of(record("airport-base", "ZBAA", "airport", next)));
+
+        JdbcPollingTriggerAdapter first = trigger(source,
+                List.of(new JdbcPollingTriggerAdapter.PollingScope("jdbc-main", "airport-base", T0)));
+        first.pollOnce(event -> {});
+
+        assertEquals(List.of(T1.minusSeconds(5)), source.scannedSince.get("airport-base"));
+        assertEquals(next, checkpoints.load("jdbc-main", "airport-base").orElseThrow());
+
+        JdbcPollingTriggerAdapter restarted = trigger(new FakeJdbcSource(),
+                List.of(new JdbcPollingTriggerAdapter.PollingScope("jdbc-main", "airport-base", T0)));
+        assertEquals(next, restarted.watermark("jdbc-main", "airport-base"));
+    }
+
+    @Test
+    void lookbackAllowsSameTimestampRecordToBeProcessedAgainWithoutMovingCheckpointBackward() {
+        PollingCheckpointStore checkpoints = checkpointStore();
+        checkpoints.save("jdbc-main", "airport-base", T1);
+        FakeJdbcSource source = new FakeJdbcSource();
+        source.discovered.put("airport-base", List.of(record("airport-base", "LATE", "late", T1)));
+        JdbcPollingTriggerAdapter trigger = trigger(source,
+                List.of(new JdbcPollingTriggerAdapter.PollingScope("jdbc-main", "airport-base", T0)));
+        List<String> keys = new ArrayList<>();
+
+        trigger.pollOnce(event -> keys.add(event.getSourceKey()));
+
+        assertEquals(List.of("LATE"), keys);
+        assertEquals(List.of(T1.minusSeconds(5)), source.scannedSince.get("airport-base"));
+        assertEquals(T1, trigger.watermark("jdbc-main", "airport-base"));
+    }
+
+    @Test
+    void successfulBatchPersistsMaximumSourceTimestamp() {
+        Instant latest = T1.plusSeconds(45);
+        FakeJdbcSource source = new FakeJdbcSource();
+        source.discovered.put("airport-base", List.of(
+                record("airport-base", "A", "first", T1),
+                record("airport-base", "B", "latest", latest),
+                record("airport-base", "C", "middle", T1.plusSeconds(10))));
+        JdbcPollingTriggerAdapter trigger = trigger(source,
+                List.of(new JdbcPollingTriggerAdapter.PollingScope("jdbc-main", "airport-base", T0)));
+
+        trigger.pollOnce(event -> {});
+
+        assertEquals(latest, trigger.watermark("jdbc-main", "airport-base"));
+        assertEquals(latest, checkpointStore().load("jdbc-main", "airport-base").orElseThrow());
+    }
+
+    @Test
+    void emptyScanDoesNotCreateOrAdvanceCheckpoint() {
+        FakeJdbcSource source = new FakeJdbcSource();
+        JdbcPollingTriggerAdapter trigger = trigger(source,
+                List.of(new JdbcPollingTriggerAdapter.PollingScope("jdbc-main", "airport-base", T0)));
+
+        trigger.pollOnce(event -> {});
+
+        assertEquals(T0, trigger.watermark("jdbc-main", "airport-base"));
+        assertTrue(checkpointStore().load("jdbc-main", "airport-base").isEmpty());
+        assertFalse(Files.exists(checkpointFile()));
+    }
+
+    @Test
+    void checkpointSaveFailureFailsTheRoundAndKeepsInMemoryWatermark() throws Exception {
+        FakeJdbcSource source = new FakeJdbcSource();
+        source.discovered.put("airport-base", List.of(record("airport-base", "ZBAA", "airport", T1)));
+        JdbcPollingTriggerAdapter trigger = trigger(source,
+                List.of(new JdbcPollingTriggerAdapter.PollingScope("jdbc-main", "airport-base", T0)));
+        Files.createDirectories(checkpointFile());
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> trigger.pollOnce(event -> {}));
+
+        assertTrue(failure.getMessage().contains("polling checkpoint"));
+        assertEquals(T0, trigger.watermark("jdbc-main", "airport-base"));
     }
 
     @Test
@@ -189,9 +277,18 @@ class JdbcPollingTriggerAdapterTest {
         trigger.stop();
     }
 
-    private static JdbcPollingTriggerAdapter trigger(FakeJdbcSource source,
-                                                       List<JdbcPollingTriggerAdapter.PollingScope> scopes) {
-        return new JdbcPollingTriggerAdapter(Map.of("jdbc-main", source), scopes, Duration.ofSeconds(30));
+    private JdbcPollingTriggerAdapter trigger(FakeJdbcSource source,
+                                              List<JdbcPollingTriggerAdapter.PollingScope> scopes) {
+        return new JdbcPollingTriggerAdapter(Map.of("jdbc-main", source), scopes, Duration.ofSeconds(30),
+                Duration.ofSeconds(5), checkpointStore());
+    }
+
+    private PollingCheckpointStore checkpointStore() {
+        return new PollingCheckpointStore(checkpointFile());
+    }
+
+    private Path checkpointFile() {
+        return temp.resolve("runtime/state/polling-checkpoints.json");
     }
 
     private static SourceRecord record(String objectName, String key, String name, Instant timestamp) {

@@ -24,29 +24,38 @@ import org.atmkg.core.spi.TriggerAdapter;
  * watermark 推进或失败重试的通用机制变化才写 Java。
  *
  * <p>本类只发包含稳定 sourceKey 的 ChangeEvent，不能直接写 GraphStore。改成携带行数据会绕过权威回读。
- * 当前严格 {@code watermark > ?}、状态仅在进程内，hard DELETE/同时间戳晚到未解决。重复或遗漏先查
- * scanChangedSince 返回 timestamp、event consumer 是否成功、失败轮次是否错误推进 watermark。
+ * 查询仍严格使用 {@code watermark > ?}，但传入“checkpoint - lookback”以允许安全重读；所有事件消费成功且
+ * checkpoint 保存成功后，才推进到本轮最大 sourceTimestamp。timestamp polling 仍不能发现 hard DELETE。
  */
 public final class JdbcPollingTriggerAdapter implements TriggerAdapter {
     private final Map<String, SourceAdapter> adapters;
     private final List<ScopeKey> scopes;
     private final Map<ScopeKey, Instant> watermarks;
+    private final Duration lookback;
+    private final PollingCheckpointStore checkpointStore;
     private final long intervalNanos;
     private ScheduledExecutorService executor;
     private Consumer<ChangeEvent> consumer;
 
     public JdbcPollingTriggerAdapter(Map<String, SourceAdapter> adapters,
                                      Collection<PollingScope> scopes,
-                                     Duration interval) {
+                                     Duration interval,
+                                     Duration lookback,
+                                     PollingCheckpointStore checkpointStore) {
         Objects.requireNonNull(adapters, "adapters");
         Objects.requireNonNull(scopes, "scopes");
         Objects.requireNonNull(interval, "interval");
+        Objects.requireNonNull(lookback, "lookback");
+        Objects.requireNonNull(checkpointStore, "checkpointStore");
         if (adapters.isEmpty()) throw new IllegalArgumentException("adapters 不能为空");
         if (scopes.isEmpty()) throw new IllegalArgumentException("polling scopes 不能为空");
         if (interval.isZero() || interval.isNegative()) {
             throw new IllegalArgumentException("polling interval 必须大于 0");
         }
+        if (lookback.isNegative()) throw new IllegalArgumentException("polling lookback 不能小于 0");
         this.intervalNanos = interval.toNanos();
+        this.lookback = lookback;
+        this.checkpointStore = checkpointStore;
         this.adapters = Map.copyOf(new LinkedHashMap<>(adapters));
 
         List<ScopeKey> parsedScopes = new ArrayList<>();
@@ -57,7 +66,9 @@ public final class JdbcPollingTriggerAdapter implements TriggerAdapter {
             if (!this.adapters.containsKey(key.sourceId())) {
                 throw new IllegalArgumentException("polling scope 未注册 SourceAdapter：" + key.sourceId());
             }
-            if (initialWatermarks.putIfAbsent(key, scope.initialWatermark()) != null) {
+            Instant watermark = checkpointStore.load(key.sourceId(), key.objectName())
+                    .orElse(scope.initialWatermark());
+            if (initialWatermarks.putIfAbsent(key, watermark) != null) {
                 throw new IllegalArgumentException("重复 polling scope：" + key.display());
             }
             parsedScopes.add(key);
@@ -109,10 +120,12 @@ public final class JdbcPollingTriggerAdapter implements TriggerAdapter {
     }
 
     private void pollScope(ScopeKey scope, Consumer<ChangeEvent> eventConsumer) {
-        Instant since = watermarks.get(scope);
+        // 1. 持久化 checkpoint 已在构造时优先于 initialWatermark；本轮从回看起点扫描。
+        Instant checkpoint = watermarks.get(scope);
+        Instant since = checkpoint.minus(lookback);
         SourceAdapter adapter = adapters.get(scope.sourceId());
         List<Discovery> discoveries = new ArrayList<>();
-        Instant latest = since;
+        Instant latest = checkpoint;
 
         Iterator<SourceRecord> iterator = adapter.scanChangedSince(scope.objectName(), since).iterator();
         Throwable failure = null;
@@ -122,7 +135,7 @@ public final class JdbcPollingTriggerAdapter implements TriggerAdapter {
                 validateDiscoveryScope(record, scope);
                 Instant timestamp = record.getSourceTimestamp();
                 if (timestamp == null || !timestamp.isAfter(since)) {
-                    throw new IllegalStateException("JDBC polling sourceTimestamp 必须晚于当前 watermark："
+                    throw new IllegalStateException("JDBC polling sourceTimestamp 必须晚于本轮扫描起点："
                             + scope.display() + "/" + record.getSourceKey());
                 }
                 discoveries.add(new Discovery(record.getSourceKey(), timestamp));
@@ -135,11 +148,16 @@ public final class JdbcPollingTriggerAdapter implements TriggerAdapter {
             closeIterator(iterator, failure);
         }
 
+        // 2. ChangeEvent 只携带源记录身份，consumer 成功后才有资格推进水位。
         for (Discovery discovery : discoveries) {
             eventConsumer.accept(new ChangeEvent(eventId(scope, discovery), scope.sourceId(), scope.objectName(),
                     discovery.sourceKey(), ChangeEvent.Operation.UPSERT, discovery.timestamp()));
         }
-        if (!discoveries.isEmpty()) watermarks.put(scope, latest);
+        // 3. 先原子保存本轮最大源时间，再更新进程内水位；空扫描和纯回看重复都不推进。
+        if (latest.isAfter(checkpoint)) {
+            checkpointStore.save(scope.sourceId(), scope.objectName(), latest);
+            watermarks.put(scope, latest);
+        }
     }
 
     private static void closeIterator(Iterator<?> iterator, Throwable failure) {
