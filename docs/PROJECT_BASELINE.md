@@ -22,6 +22,11 @@ TriggerAdapter
   -> 回读 SourceAdapter 权威记录
   -> MappingEngine
   -> GraphStore
+  -> GraphChangeNotice
+  -> GraphChangeProcessor
+  -> Neighborhood / Association
+  -> GraphChangeProjectionResult
+  -> 控制台摘要
 
 QueryService
   -> GraphDTO
@@ -110,6 +115,11 @@ relationshipUids 只包含该 SourceRef 直接拥有的关系，anchorEntityUids
 这不表示 JDBC polling 已能发现 hard DELETE。GraphStore 提交与 notice listener 也不是持久化 outbox；
 当前只保证成功返回的 before-state 与删除事务一致，不保证 notice exactly-once 或绝不丢失。
 
+正式服务的 GraphChange Projector 或结果 Consumer 失败会继续向上传播；polling 因而不会为该失败批次推进
+checkpoint，下轮允许再次回读、replaceProjection 和处理 GraphChange，保持 at-least-once。人工维护入口
+`tools/sync.cmd` 使用不带 listener 的旧装配重载，不执行 GraphChange，这是为了避免人工 fullSync 自动产生大量
+关联查询的有意边界。
+
 ## 7. 查询与 GraphDTO
 
 查询主能力包括：
@@ -134,9 +144,14 @@ queries/query-templates.yaml
 
 当前模板只允许现有 `QuerySpec` 的受控子集，不接受 raw Cypher。
 
-`queries/change-query-rules.yaml` 表达 `GraphNodeDTO.kind -> queryId`。`GraphChangeAssociationProjector` 已能执行“anchor ENTITY -> rules -> NAMED -> 最多一次 continuation”的轻量关联查询，但当前尚未装配进 `KgServiceMain/SyncRuntime`，也没有 outward sink。
+`queries/change-query-rules.yaml` 表达 `GraphNodeDTO.kind -> queryId`，并由正式 `KgServiceMain` 在启动时严格加载。
+文件缺失、重复 kind 或结构非法会使服务启动失败；当前 Registry 没有枚举/contains 接口，因此规则中的未知
+queryId 仍在首次执行该规则时由 QueryService 明确失败，不为此扩大 Registry API。
 
-因此当前可以验证关联查询组件，但不能宣称变化后会由正式服务自动向外推送关联结果。
+UPSERT 写图成功后，正式进程内链会依次执行 Neighborhood 和“anchor ENTITY -> rules -> NAMED -> 最多一次
+continuation”的 Association 查询，再把统一结果交给控制台摘要 Consumer。DELETE notice 继续保留实体、关系和
+anchor 的 before-state UID，但现有 Neighborhood 返回 `SKIPPED_DELETE`，Association 返回空列表，不做删除关联
+影响推导。当前没有 durable sink、outbox 或业务消息协议，不能把控制台摘要描述为可靠自动推送。
 
 ## 9. 派生关系边界
 
@@ -168,6 +183,8 @@ HTTP 服务由轻量 `KgApiServer` 提供，配置位于 `config/api.yaml`。当
 - `api.yaml`：服务直接读取；
 
 `queries/query-templates.yaml` 也由服务直接读取，但位于 queries 目录，不属于 `config/`。
+`queries/change-query-rules.yaml` 同样由正式服务直接读取，用于 GraphChange Association 规则，也不属于
+`config/`。
 正式 projectId 和 UID namespace 集中在 `src/main/java/org/atmkg/core/ProjectConstants.java`，两者都不是
 普通运行参数。`IDENTITY_NAMESPACE` 与本体 IRI 当前文本可能相同，但用途不同；本体 IRI 仍只从正式
 TTL/Mapping 获取，不通过该常量生成。Neo4j 环境变量、唯一正式 TTL 和查询完整性原则见
@@ -192,5 +209,5 @@ Java 是正式语义核心。Python 仅允许用于外围准备、实验或测�
 - JDBC hard DELETE 自动发现；
 - 空间拓扑派生；
 - 多来源关系 contribution；
-- association outward sink；
+- GraphChange durable outward sink / 业务消息协议；
 - 运行时多版本本体。

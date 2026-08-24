@@ -31,7 +31,7 @@
 
 变化关联
   位置：service/change
-  问题：数据变化后的关联查询和影响结果看这里；当前组件尚未正式装配到服务。
+  问题：正式服务的变化查询或 [CHANGE] 摘要不对时看这里；可靠业务消息传输尚未实现。
 
 HTTP 接口：api/http。人工工具：tools、review。图形显示：viewer。
 API 返回正确但页面不对时才查 Viewer，不要反向修改 GraphDTO 或图数据。
@@ -416,12 +416,14 @@ navpoint-neighbors、navpoint-routes，写法是：
 
 执行：
 
-  mvn.cmd -Dtest=ChangeQueryRuleRegistryTest,GraphChangeAssociationProjectorTest test
+  mvn.cmd -Dtest=ChangeQueryRuleRegistryTest,GraphChangeAssociationProjectorTest,KgServiceMainTest test
 
-重要：KgServiceMain 和 SyncRuntime 当前没有加载 change-query-rules.yaml，也没有 outward sink。
-所以即使测试通过，运行 tools\service.cmd 也不会自动执行或向外推送关联结果。当前只能证明
-ChangeQueryRuleRegistry + GraphChangeAssociationProjector 独立调用正确；生产装配是未实现工作，
-不要靠再加 YAML 解决。
+正式 KgServiceMain 会严格加载 change-query-rules.yaml。UPSERT 写图成功后会依次执行 Neighborhood
+和 Association，并在 service.cmd 控制台打印一行 [CHANGE] 摘要。Projector 或结果 Consumer 失败会
+向上传播；JDBC polling 不会为该失败批次推进 checkpoint。
+
+重要：控制台摘要不是 durable sink、审计日志或业务消息推送。DELETE Projector 仍跳过推导；
+tools\sync.cmd 是直接人工同步工具，不执行 GraphChange。这些是当前有意边界，不要靠增加 YAML 改变。
 
 
 任务 8：我要开启 JDBC polling
@@ -711,7 +713,7 @@ KGEntityContribution 是内部技术节点，不能出现在 QueryService/GraphD
   polling exactly-once
   RouteSegment ↔ Airspace 空间拓扑计算
   DerivedRelationPlugin 的 persistence/reconcile/ownership
-  GraphChangeAssociationProjector 正式 runtime wiring/outward sink
+  GraphChange durable outward sink / 业务消息协议
   多来源关系 contribution
 
 

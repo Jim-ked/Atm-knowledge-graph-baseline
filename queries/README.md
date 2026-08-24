@@ -33,7 +33,9 @@ GraphNodeDTO.kind -> 已存在的 queryId
 
 例如 RouteSegment 变化后选择 `segment-route-structures`，PlannedFlightRoute 再选择 `planned-route-flights`。
 
-当前 `ChangeQueryRuleRegistry + GraphChangeAssociationProjector` 已实现并有测试，但尚未装配进正式 `KgServiceMain/SyncRuntime`，也没有 outward sink。因此修改本文件当前不会让 `tools/service.cmd` 自动推送关联结果。
+正式 `KgServiceMain` 会严格加载本文件。UPSERT 写图成功后，GraphChangeProcessor 先执行 Neighborhood，再按本文件执行 Association，并把统一结果输出为一行控制台摘要。Projector 或下游异常会向上传播；在 JDBC polling 中，该失败批次不会推进 checkpoint。
+
+该控制台输出不是 durable sink 或业务消息推送。DELETE notice 虽保留 before-state UID，现有 Projector 仍跳过 DELETE 推导；`tools/sync.cmd` 是人工同步入口，也不执行 GraphChange。
 
 ## 当前空间边界
 

@@ -6,7 +6,7 @@
 
 截至当前基线，已报告并通过：
 
-- Maven：148 tests，0 failures，0 errors，4 skipped，BUILD SUCCESS；
+- Maven：159 tests，0 failures，0 errors，4 skipped，BUILD SUCCESS；
 - Viewer：27/27 tests passed；
 - Viewer build：成功；
 - G6 正式浏览器 Gate：默认 G6、展开/收起、pin/unpin、标签模式通过，浏览器 console error 为 0；
@@ -67,6 +67,7 @@
 - 显式 DELETE notice 携带 GraphStore 删除事务返回的 entity/relationship/anchor UID 摘要；
 - deleteProjection 失败时不发布 notice，eventId 不会错误标记成功；
 - NeighborhoodProjector 仍返回 SKIPPED_DELETE，AssociationProjector 仍不处理 DELETE；
+- GraphChange 失败时 polling checkpoint 不推进，下轮再次 replaceProjection 并重试 GraphChange；
 - 服务 sources 为空时进入 Query/API-only，不自动执行 fullRebuild。
 
 ## 5. 当前查询与关联验证
@@ -79,9 +80,17 @@
 - `planned-route-flights`；
 - GraphChangeAssociationProjector 的一级关联 + 最多一次 continuation；
 - Route/ScheduledFlightRoute 没有后续规则时自然停止；
-- PlannedFlightRoute 可继续关联到 Flight。
+- PlannedFlightRoute 可继续关联到 Flight；
+- GraphChangeProcessor 固定按 Neighborhood -> Association -> result Consumer 执行；
+- 正式 KgServiceMain 加载 change-query-rules，并把 Processor 注入 SyncRuntime；
+- UPSERT 可从 fake SourceAdapter 经 DefaultSyncService 到达统一结果 Consumer；
+- DELETE 统一结果保留 before-state UID，同时保持 Neighborhood/Association 跳过；
+- Projector 与结果 Consumer 异常均向上传播；
+- 控制台 Reporter 只打印状态和计数，不打印 GraphDTO 或 properties。
 
-需要注意：该 association 组件当前尚未正式装配到 `KgServiceMain/SyncRuntime`，也没有 outward sink，因此这些测试证明的是组件能力，不是正式服务自动推送能力。
+正式服务当前只把 GraphChange 统一结果输出为一行控制台摘要。该出口不持久化，也不是可靠 outward sink；
+`tools/sync.cmd` 的人工同步链不执行 GraphChange。规则中的 queryId 尚无启动期交叉校验，未知 ID 在首次执行时
+明确失败。
 
 ## 6. Viewer 验证
 
@@ -99,7 +108,7 @@
 - polling exactly-once；
 - RouteSegment-Airspace 真实空间拓扑与三维高度重叠；
 - 派生关系正式持久化/reconcile/ownership；
-- association runtime wiring 与 outward sink；
+- GraphChange durable outward sink / 业务消息协议；
 - 多来源关系 contribution；
 - 银河麒麟 V4.0.2 最终实机部署闭环。
 

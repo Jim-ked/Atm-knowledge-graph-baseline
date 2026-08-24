@@ -29,9 +29,14 @@
   -> MappingEngine
   -> GraphStore replaceProjection
   -> GraphChangeNotice
+  -> GraphChangeProcessor
+  -> NeighborhoodProjector
+  -> AssociationProjector
+  -> GraphChangeProjectionResult
+  -> 控制台摘要
 ```
 
-`GraphChangeAssociationProjector` 可以基于 `queries/change-query-rules.yaml` 和 named query 生成关联查询结果，但当前尚未正式装配进 `KgServiceMain`，也没有 outward sink，因此不能把它描述为已经上线的自动影响推送。
+正式 `KgServiceMain` 已加载 `queries/change-query-rules.yaml`：UPSERT 写图成功后执行 Neighborhood 与 Association 查询，并输出一行 `[CHANGE]` 摘要。该输出只用于人工观察，不是 durable sink、审计日志或业务消息推送；`tools/sync.cmd` 仍是直接人工同步工具，不走这条 GraphChange 输出链。
 
 ## 当前主要能力
 
@@ -51,11 +56,10 @@
 以下能力当前尚未完成，不是增加一个 YAML 配置即可启用：
 
 - JDBC hard DELETE 自动发现；
-- polling watermark 持久化；
-- 严格 `watermark > ?` 下的同时间戳晚到记录完整处理；
+- polling exactly-once，以及超出 lookback 窗口的极晚记录完整保障；
 - `RouteSegment ↔ Airspace` 空间拓扑及高度重叠计算；
 - 派生关系的正式持久化、ownership 与 reconcile；
-- `GraphChangeAssociationProjector` 的正式 runtime wiring / outward sink；
+- GraphChange 的 durable outward sink / 业务消息协议；
 - 多来源关系 contribution；
 - 最终业务界面与消息传输方式。
 

@@ -15,8 +15,7 @@ associations:
 #     - navpoint-routes
 #
 # 修改后执行：
-# mvn.cmd -Dtest=ChangeQueryRuleRegistryTest,GraphChangeAssociationProjectorTest test
+# mvn.cmd -Dtest=ChangeQueryRuleRegistryTest,GraphChangeAssociationProjectorTest,KgServiceMainTest test
 #
-# 当前 KgServiceMain/SyncRuntime 没有加载本文件，也没有 outward sink；因此测试通过后运行
-# tools\service.cmd 仍不会自动执行或推送关联结果。正式自动生效需要后续把
-# ChangeQueryRuleRegistry + GraphChangeAssociationProjector 接入运行时，本轮不要用更多 YAML 代替该工作。
+# 正式 KgServiceMain 会加载本文件；UPSERT 写图成功后执行 Neighborhood + Association，并只输出
+# 一行控制台摘要。该输出不是 durable sink。DELETE Projector 仍跳过，tools\sync.cmd 不走 GraphChange。

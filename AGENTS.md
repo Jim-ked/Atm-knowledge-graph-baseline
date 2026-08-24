@@ -14,7 +14,7 @@
 - 查询不得随机抽样、top-N 或静默 LIMIT。完整 K-hop 返回约束范围内到达节点以及这些节点之间原图已有的完整关系。
 - QueryService 不负责空间/业务计算。缺失的 `RouteSegment ↔ Airspace` 等派生事实必须由独立计算模块形成后再写入图。
 - `queries/query-templates.yaml` 只允许受控 QuerySpec 模板，不接受 raw Cypher。
-- `queries/change-query-rules.yaml` 当前只用于 association 组件；`KgServiceMain/SyncRuntime` 尚未正式装配 GraphChangeAssociationProjector，也没有 outward sink。
+- `queries/change-query-rules.yaml` 是正式服务运行配置；`KgServiceMain` 的 UPSERT GraphChange 会执行 Neighborhood + Association，并只输出控制台摘要。该输出不 durable；DELETE Projector 仍跳过；`sync.cmd` 不走 GraphChange 输出链。
 - 正式 Viewer 只保留 G6。不要重新加入 Sigma/Cytoscape/Graphology 运行实现，也不要让 Viewer 反向改变 GraphDTO/API。
 - 当前最终业务 UI 技术栈未知，不得绑定 Vue/React 或特定页面框架。
 - Java 是正式运行时唯一语义核心。Python 只允许外围准备、实验和测试数据生成。
