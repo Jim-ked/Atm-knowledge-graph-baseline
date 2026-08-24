@@ -17,6 +17,9 @@ export class ApiClient {
       maxDepth: this.#depth(maxDepth)
     });
   }
+  cypher(cypher) {
+    return this.#post('/graph/cypher', { cypher: this.#text(cypher, 'cypher') });
+  }
 
   async #get(path) {
     return this.#read(await fetch(`${this.basePath}${path}`, { headers: { Accept: 'application/json' } }));

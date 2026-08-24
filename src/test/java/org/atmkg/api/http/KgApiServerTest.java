@@ -155,6 +155,25 @@ class KgApiServerTest {
     }
 
     @Test
+    void cypherEndpointAcceptsOnlyCypherFieldAndReturnsGraphDto() throws Exception {
+        server.close();
+        GraphDTO graph = new GraphDTO("1",
+                List.of(new GraphNodeDTO("stable-1", List.of("Airport"), "Airport", "A", Map.of("name", "A"))),
+                List.of(), Map.of("queryType", "CYPHER", "complete", true));
+        server = new KgApiServer(config(100, 100), queryService, cypher -> graph, schema(), () -> true);
+        server.start();
+        baseUri = URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/api/v1");
+
+        HttpResponse<String> response = post("/graph/cypher", "{\"cypher\":\"MATCH (n) RETURN n LIMIT 1\"}");
+        HttpResponse<String> unknown = post("/graph/cypher", "{\"cypher\":\"MATCH (n) RETURN n\",\"params\":{}}");
+
+        assertEquals(200, response.statusCode());
+        assertEquals("stable-1", json(response).get("nodes").get(0).get("id").asText());
+        assertEquals(400, unknown.statusCode());
+        assertEquals("INVALID_REQUEST", json(unknown).get("code").asText());
+    }
+
+    @Test
     void schemaComesFromLoadedOntology() throws Exception {
         HttpResponse<String> response = get("/schema");
 

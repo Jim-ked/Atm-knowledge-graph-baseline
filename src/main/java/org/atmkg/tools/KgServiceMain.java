@@ -13,6 +13,7 @@ import org.atmkg.infra.neo4j.Neo4jConnectionSettings;
 import org.atmkg.infra.neo4j.Neo4jDriverFactory;
 import org.atmkg.infra.ontology.JenaOntologyService;
 import org.atmkg.infra.query.Neo4jQueryService;
+import org.atmkg.infra.query.ReadOnlyCypherExecutor;
 import org.atmkg.service.change.ChangeQueryRuleRegistry;
 import org.atmkg.service.change.GraphChangeAssociationProjector;
 import org.atmkg.service.change.GraphChangeConsoleReporter;
@@ -49,12 +50,14 @@ public final class KgServiceMain {
         Driver driver = Neo4jDriverFactory.create(neo4j);
         QueryService queryService = new TemplateAwareQueryService(
                 new Neo4jQueryService(driver, neo4j, api.getSchemaVersion()), queryTemplates);
+        ReadOnlyCypherExecutor cypherExecutor = new ReadOnlyCypherExecutor(
+                driver, neo4j, api.getSchemaVersion(), api.getMaxResultNodes(), api.getMaxResultRelationships());
         SyncRuntime syncRuntime;
         KgApiServer server;
         try {
             Consumer<GraphChangeNotice> graphChange = graphChangeListener(root, queryService, System.out);
             syncRuntime = SyncRuntimeAssembler.assemble(root, schema, driver, neo4j, graphChange);
-            server = new KgApiServer(api, queryService, schema, () -> {
+                server = new KgApiServer(api, queryService, cypherExecutor, schema, () -> {
                 try {
                     driver.verifyConnectivity();
                     return true;

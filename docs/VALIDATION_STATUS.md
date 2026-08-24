@@ -6,8 +6,8 @@
 
 截至当前基线，已报告并通过：
 
-- Maven：159 tests，0 failures，0 errors，4 skipped，BUILD SUCCESS；
-- Viewer：27/27 tests passed；
+- Maven：161 tests，0 failures，0 errors，4 skipped，BUILD SUCCESS；
+- Viewer：34/34 tests passed；
 - Viewer build：成功；
 - G6 正式浏览器 Gate：默认 G6、展开/收起、pin/unpin、标签模式通过，浏览器 console error 为 0；
 - `git diff --check`：通过。
@@ -97,6 +97,7 @@
 正式 Viewer 已收敛为 G6-only。Sigma、Cytoscape、Graphology 及其实验依赖、adapter、workbench 和 gate 已从正式实现中删除。
 
 当前 Viewer 保留实体/K-hop/路径查询、节点与关系详情、标签模式、展开/收起、pin/unpin、重新平衡等已验证交互。
+当前 Viewer 还支持只读 Cypher：后端通过 `EXPLAIN` + `QueryType.READ_ONLY` 判定后执行，图结果复用同一 GraphModel/G6；scalar-only、写查询、贡献节点和其它 project 均有明确边界。
 
 ## 7. 尚未验证/未实现
 

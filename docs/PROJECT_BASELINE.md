@@ -142,7 +142,7 @@ GraphDTO 只暴露稳定业务 UID、节点 labels/kind/caption/properties 与�
 queries/query-templates.yaml
 ```
 
-当前模板只允许现有 `QuerySpec` 的受控子集，不接受 raw Cypher。
+正式 QueryService 模板只允许现有 `QuerySpec` 的受控子集，不接受 raw Cypher。Viewer 另有独立 `/api/v1/graph/cypher` 只读入口，由 `ReadOnlyCypherExecutor` 通过 Neo4j `EXPLAIN`/`QueryType.READ_ONLY` 判定后返回同一 GraphDTO；它不改变 QueryService/QuerySpec 契约。
 
 `queries/change-query-rules.yaml` 表达 `GraphNodeDTO.kind -> queryId`，并由正式 `KgServiceMain` 在启动时严格加载。
 文件缺失、重复 kind 或结构非法会使服务启动失败；当前 Registry 没有枚举/contains 接口，因此规则中的未知

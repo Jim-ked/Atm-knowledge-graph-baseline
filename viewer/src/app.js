@@ -40,6 +40,7 @@ const elements = Object.fromEntries([
   'element-empty', 'node-empty', 'node-detail', 'node-caption', 'node-fields', 'node-properties',
   'relationship-detail', 'relationship-type', 'relationship-fields', 'relationship-properties',
   'path-from', 'path-to', 'path-depth', 'node-label-mode', 'edge-label-mode',
+  'cypher', 'cypher-form',
   'entity-query', 'rebalance', 'clear', 'collapse', 'pin', 'unpin', 'hide-node',
   'g6-poc-controls', 'g6-fixed', 'g6-link-distance', 'g6-link-strength',
   'g6-many-body', 'g6-collide-strength', 'g6-collide-iterations', 'g6-center-strength', 'g6-poc-state',
@@ -174,6 +175,21 @@ async function callApi(operation, label) {
   status(`${label}：${graphDto.nodes.length} nodes / ${graphDto.relationships.length} relationships`);
   return graphDto;
 }
+
+async function executeCypher(cypher) {
+  return callApi(() => api.cypher(cypher), 'Cypher');
+}
+
+elements['cypher-form'].addEventListener('submit', event => {
+  event.preventDefault();
+  executeCypher(elements.cypher.value).catch(error => status(error.message, true));
+});
+elements.cypher.addEventListener('keydown', event => {
+  if (event.ctrlKey && event.key === 'Enter') {
+    event.preventDefault();
+    elements['cypher-form'].requestSubmit();
+  }
+});
 
 for (const button of document.querySelectorAll('[data-preset]')) {
   button.addEventListener('click', () => {
@@ -429,6 +445,7 @@ window.__ATMKG_PHASE5__ = {
   get apiRequests() { return apiRequests; },
   get g6PocConfig() { return { ...g6PocConfig }; },
   get rendering() { return rendering; },
+  executeCypher,
   loadPreset: name => callApi(() => PRESETS[name].run(api), PRESETS[name].label),
   loadScale: size => setGraph(createScaleFixture(size), `scale-${size}`),
   loadPath: async () => {

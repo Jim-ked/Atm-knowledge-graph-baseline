@@ -2,7 +2,7 @@
 
 ## 1. 原则
 
-最终调用端技术栈未知，因此对外冻结的是稳定 UID、查询语义和 GraphDTO 数据契约，不绑定 Vue/React，也不允许客户端直接依赖 Neo4j internal id、elementId 或业务 Cypher。
+最终调用端技术栈未知，因此对外冻结的是稳定 UID、查询语义和 GraphDTO 数据契约，不绑定 Vue/React；客户端不得依赖 Neo4j internal id 或 elementId。Viewer 另有受控的只读 Cypher 入口，但它不进入 QueryService 主链。
 
 HTTP 层只是轻量适配器；查询语义仍由 `QueryService` 负责。
 
@@ -26,6 +26,7 @@ POST /api/v1/graph/one-hop
 POST /api/v1/graph/k-hop
 POST /api/v1/graph/path
 POST /api/v1/graph/query
+POST /api/v1/graph/cypher
 ```
 
 统一 `/graph/query` 当前只接受：
@@ -38,6 +39,8 @@ PATH
 ```
 
 `NAMED` query 尚未开放 HTTP API。named query 目前由内部 `TemplateAwareQueryService` / association 组件使用。
+
+`/graph/cypher` 只接受 `{ "cypher": "MATCH ... RETURN ..." }`。服务端先执行 Neo4j 官方 `EXPLAIN`，仅当 `ResultSummary.queryType()` 为 `QueryType.READ_ONLY` 时才执行原查询，并额外使用 `AccessMode.READ` 会话。输入 `EXPLAIN`/`PROFILE` 会明确拒绝；该入口不接受 params、raw 查询模板或写操作。
 
 ## 3. GraphDTO
 
@@ -93,12 +96,13 @@ health 返回 Neo4j 可用性；当 Neo4j 不可用时服务返回 `DEGRADED`。
 
 当前 HTTP API 不直接提供：
 
-- 任意 raw Cypher；
 - NAMED query；
 - ChangeEvent 写入端点；
 - sync/fullRebuild/resync 管理端点；
 - association outward sink；
 - 空间推理端点。
+
+Viewer Cypher 必须返回节点/关系/路径图元素；scalar-only 结果返回 `CYPHER_NO_GRAPH_RESULT`。仅保留带 `KGEntity`、当前 `kg_project` 和稳定 `kg_uid` 的正式节点，关系必须能解析到两个正式节点并带稳定 `kg_uid`；贡献节点、其它 project、Neo4j internal id/elementId 均不会进入 GraphDTO。结果由用户在 Cypher 中的 `LIMIT` 与服务端配置硬上限共同控制，超限显式返回 `RESULT_TOO_LARGE`，不静默截断。
 
 同步控制目前通过内部运行时、polling 和 `tools/sync.cmd` 完成，不应把历史文档中“HTTP 必须暴露 ChangeEvent/resync”继续当成当前已实现契约。
 

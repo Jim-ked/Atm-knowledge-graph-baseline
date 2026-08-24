@@ -18,10 +18,12 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 import org.atmkg.core.error.QueryExecutionException;
+import org.atmkg.core.error.ReadOnlyCypherException;
 import org.atmkg.core.model.GraphDTO;
 import org.atmkg.core.model.OntologySchema;
 import org.atmkg.core.model.QuerySpec;
 import org.atmkg.core.spi.QueryService;
+import org.atmkg.core.spi.ReadOnlyCypherService;
 
 /**
  * 轻量 HTTP 入口，只负责请求校验、调用 QueryService 和返回 JSON，不实现图查询或业务语义。
@@ -32,6 +34,7 @@ public final class KgApiServer implements AutoCloseable {
 
     private final ApiConfig config;
     private final QueryService queryService;
+    private final ReadOnlyCypherService cypherExecutor;
     private final OntologySchema schema;
     private final BooleanSupplier neo4jHealth;
     private final HttpServer server;
@@ -39,8 +42,14 @@ public final class KgApiServer implements AutoCloseable {
 
     public KgApiServer(ApiConfig config, QueryService queryService, OntologySchema schema,
                        BooleanSupplier neo4jHealth) {
+        this(config, queryService, null, schema, neo4jHealth);
+    }
+
+    public KgApiServer(ApiConfig config, QueryService queryService, ReadOnlyCypherService cypherExecutor,
+                       OntologySchema schema, BooleanSupplier neo4jHealth) {
         this.config = Objects.requireNonNull(config, "config");
         this.queryService = Objects.requireNonNull(queryService, "queryService");
+        this.cypherExecutor = cypherExecutor;
         this.schema = Objects.requireNonNull(schema, "schema");
         this.neo4jHealth = Objects.requireNonNull(neo4jHealth, "neo4jHealth");
         try {
@@ -86,6 +95,8 @@ public final class KgApiServer implements AutoCloseable {
             route(exchange);
         } catch (ApiFailure failure) {
             sendError(exchange, failure.status, failure.code, failure.getMessage(), failure.details);
+        } catch (ReadOnlyCypherException failure) {
+            sendError(exchange, failure.getStatus(), failure.getCode(), failure.getMessage(), failure.getDetails());
         } catch (QueryExecutionException failure) {
             sendError(exchange, 500, "QUERY_FAILED", "图查询执行失败", Map.of());
         } catch (RuntimeException failure) {
@@ -220,6 +231,11 @@ public final class KgApiServer implements AutoCloseable {
             executeGraph(exchange, spec, spec.getType() != QuerySpec.Type.PATH);
             return;
         }
+        if (rawPath.equals(base + "/graph/cypher")) {
+            requireMethod(exchange, "POST");
+            executeCypher(exchange, readCypher(readJson(exchange)));
+            return;
+        }
         throw new ApiFailure(404, "INVALID_REQUEST", "接口不存在", Map.of());
     }
 
@@ -267,6 +283,36 @@ public final class KgApiServer implements AutoCloseable {
         } catch (IOException ex) {
             throw new IllegalStateException("GraphDTO JSON 写出失败", ex);
         }
+    }
+
+    private void executeCypher(HttpExchange exchange, String cypher) {
+        if (cypherExecutor == null) {
+            throw new QueryExecutionException("Viewer Cypher 执行器未装配");
+        }
+        GraphDTO graph = cypherExecutor.execute(cypher);
+        if (graph.getNodes().size() > config.getMaxResultNodes()
+                || graph.getRelationships().size() > config.getMaxResultRelationships()) {
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("nodeCount", graph.getNodes().size());
+            details.put("relationshipCount", graph.getRelationships().size());
+            throw new ReadOnlyCypherException(413, "RESULT_TOO_LARGE", "完整查询结果超过服务配置上限", details);
+        }
+        try {
+            sendBytes(exchange, 200, ApiJson.writeGraph(graph).getBytes(StandardCharsets.UTF_8));
+        } catch (IOException ex) {
+            throw new IllegalStateException("GraphDTO JSON 写出失败", ex);
+        }
+    }
+
+    private String readCypher(JsonNode request) {
+        requireObject(request);
+        rejectUnknown(request, Set.of("cypher"));
+        JsonNode value = request.get("cypher");
+        if (value == null || value.isNull() || !value.isTextual()) invalid("cypher 必须是字符串");
+        String cypher = value.textValue().trim();
+        if (cypher.isEmpty()) invalid("cypher 不能为空");
+        if (cypher.length() > config.getMaxRequestBytes()) invalid("cypher 过长");
+        return cypher;
     }
 
     private QuerySpec oneHop(JsonNode request) {

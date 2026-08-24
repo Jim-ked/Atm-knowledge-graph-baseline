@@ -30,7 +30,10 @@ try {
     nodeLabelMode: document.querySelector('#node-label-mode')?.value,
     edgeLabelMode: document.querySelector('#edge-label-mode')?.value,
     eyebrow: document.querySelector('.eyebrow')?.textContent ?? null,
-    pathQueryCollapsible: document.querySelector('details.path-query #path-form') != null
+    pathQueryCollapsible: document.querySelector('details.path-query #path-form') != null,
+    cypherInput: document.querySelector('#cypher') != null,
+    cypherForm: document.querySelector('#cypher-form') != null,
+    hasDisplayNodeLimit: document.querySelector('#display-node-limit') != null
   }));
   require(results.shell.normal.debug === 'false', 'normal viewer debug flag mismatch');
   require(results.shell.normal.engine === 'g6', 'normal viewer is not G6');
@@ -39,6 +42,9 @@ try {
     'normal viewer label defaults mismatch');
   require(results.shell.normal.eyebrow === null, 'normal viewer still exposes the development eyebrow');
   require(results.shell.normal.pathQueryCollapsible, 'path query was not kept in a compact details element');
+  require(results.shell.normal.cypherInput && results.shell.normal.cypherForm,
+    'formal viewer is missing the read-only Cypher input');
+  require(!results.shell.normal.hasDisplayNodeLimit, 'formal viewer exposes a node display limit control');
 
   const debugPage = await context.newPage();
   debugPage.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });

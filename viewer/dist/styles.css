@@ -14,14 +14,14 @@
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 960px; }
 [hidden] { display: none !important; }
-button, input { font: inherit; }
+button, input, textarea { font: inherit; }
 select { font: inherit; }
 button {
   border: 1px solid #aeb8c5; background: #fff; color: var(--ink);
   border-radius: 4px; padding: 7px 11px; cursor: pointer;
 }
 button:hover { border-color: #5a6879; background: #f4f6f8; }
-button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible {
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible {
   outline: 3px solid #60a5fa; outline-offset: 2px;
 }
 
@@ -46,9 +46,13 @@ main { padding: 14px; }
 .group-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; margin-right: 2px; }
 input { height: 32px; border: 1px solid #aeb8c5; border-radius: 3px; padding: 5px 7px; color: var(--ink); }
 input[type=number] { width: 64px; }
+textarea { width: min(760px, 100%); border: 1px solid #aeb8c5; border-radius: 3px; padding: 7px; color: var(--ink); resize: vertical; }
 select { height: 30px; border: 1px solid #aeb8c5; border-radius: 3px; background: #fff; color: var(--ink); }
 
 .query-group { flex: 1 1 540px; }
+.cypher-query { flex: 1 1 100%; display: grid; grid-template-columns: auto minmax(300px, 1fr) auto; gap: 8px; align-items: center; }
+.cypher-query label { font-size: 11px; color: var(--muted); }
+.query-hint { flex: 1 1 100%; margin: -4px 0 0; color: var(--muted); font-size: 11px; }
 .path-query { align-self: center; font-size: 12px; }
 .path-query > summary { cursor: pointer; color: #17406f; font-weight: 650; padding: 7px 2px; }
 .path-query[open] { flex: 1 1 100%; }

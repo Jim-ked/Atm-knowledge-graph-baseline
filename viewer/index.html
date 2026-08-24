@@ -14,6 +14,13 @@
 
   <main>
     <section class="controls" aria-label="图查询">
+      <form id="cypher-form" class="cypher-query" aria-label="只读 Cypher 查询">
+        <label for="cypher">Cypher</label>
+        <textarea id="cypher" rows="3"
+          placeholder="MATCH (n:KGEntity {kg_project: 'atm-knowledge-graph'}) RETURN n LIMIT 20"></textarea>
+        <button type="submit">执行 Cypher</button>
+      </form>
+      <p class="query-hint">不会写 Cypher？可使用 tools\review.cmd 生成查询语句。Ctrl+Enter 执行。</p>
       <form id="query-form" class="control-group query-group">
         <label>实体 UID <input id="uid" size="34" autocomplete="off"></label>
         <button id="entity-query" type="button">查询实体</button>
