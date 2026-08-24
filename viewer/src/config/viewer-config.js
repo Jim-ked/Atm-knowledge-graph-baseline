@@ -39,7 +39,7 @@ export const VIEWER_CONFIG = Object.freeze({
     arrowSize: 5,
     labelMode: 'AUTO',
     selectedStyle: Object.freeze({ stroke: '#0284c7', opacity: 0.78 }),
-    inactiveStyle: Object.freeze({ opacity: 0.16, labelOpacity: 0 })
+    inactiveStyle: Object.freeze({ opacity: 0.24, labelOpacity: 0.12 })
   }),
   color: Object.freeze({
     strategy: 'KIND_OR_PRIMARY_LABEL',

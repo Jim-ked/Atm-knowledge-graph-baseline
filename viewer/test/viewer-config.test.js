@@ -22,6 +22,11 @@ test('viewer config centralizes node, edge, color and interaction defaults', () 
   assert.equal(VIEWER_CONFIG.color.strategy, 'KIND_OR_PRIMARY_LABEL');
 });
 
+test('path focus keeps inactive relationships discernible as context', () => {
+  assert.ok(VIEWER_CONFIG.edge.inactiveStyle.opacity >= 0.22);
+  assert.ok(VIEWER_CONFIG.edge.inactiveStyle.labelOpacity >= 0.1);
+});
+
 test('stable node color uses kind then primary label and supports overrides', () => {
   const route = { kind: 'Route', labels: ['AviationBaseObject'] };
   const routeAgain = { kind: 'Route', labels: ['OtherLabel'] };

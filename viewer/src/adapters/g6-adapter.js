@@ -1,5 +1,6 @@
 import { CanvasEvent, EdgeEvent, Graph, NodeEvent } from '@antv/g6';
 import { ViewerAdapter, toAdapterData } from '../core/viewer-adapter.js';
+import { buildGraphElementStates } from '../core/graph-selection.js';
 import {
   G6_VISUAL_PRESETS,
   createG6PocOptions,
@@ -121,23 +122,13 @@ export class G6Adapter extends ViewerAdapter {
     const nodes = this.graph.getNodeData();
     const edges = this.graph.getEdgeData();
     this.#updatePathNodes(edges.map(edge => edge.data));
-    const neighborIds = new Set(nodeId ? this.graph.getNeighborNodesData(nodeId).map(node => node.id) : []);
-    const pathMode = this.highlightedRelationships.size > 0;
-    const states = {};
-    for (const node of nodes) {
-      states[node.id] = node.id === nodeId ? ['selected']
-        : pathMode ? (this.selection.pathNodes.has(node.id) ? ['path'] : ['inactive'])
-          : !nodeId ? []
-            : neighborIds.has(node.id) ? ['neighbor'] : ['inactive'];
-    }
-    for (const edge of edges) {
-      const edgeStates = [];
-      if (this.highlightedRelationships.has(edge.id)) edgeStates.push('highlighted');
-      if (edge.id === this.selectedRelationshipId) edgeStates.push('selected');
-      if (!pathMode && nodeId && (edge.source === nodeId || edge.target === nodeId)) edgeStates.push('related');
-      else if ((pathMode || nodeId) && edgeStates.length === 0) edgeStates.push('inactive');
-      states[edge.id] = edgeStates;
-    }
+    const states = buildGraphElementStates({
+      nodes,
+      relationships: edges,
+      selectedNodeId: nodeId,
+      selectedRelationshipId: this.selectedRelationshipId,
+      highlightedRelationshipIds: this.highlightedRelationships
+    });
     await this.graph.setElementState(states, false);
     await this.#refreshLabels();
     const labelBehavior = createG6PocOptions(this.config, this.selection).behaviors
