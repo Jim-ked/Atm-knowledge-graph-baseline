@@ -7,9 +7,10 @@
 - 稳定 UID 必须来自类语义 + 稳定业务键。不得使用文件名、路径、Sheet、表名或 Neo4j internal id 作为外部实体身份。
 - 同一实体允许多 source contribution；`KGEntityContribution` 是内部技术节点，不得暴露到 Query/GraphDTO/Viewer。属性冲突必须显式失败，不允许后写覆盖前写。
 - 多来源关系 contribution 当前未实现，不要假设与实体 contribution 等价。
+- 显式 DELETE 进入 SyncService 后，GraphStore 必须在同一删除事务中返回该 SourceRef 的 UID 前态摘要；实体 UID 表示原贡献，不等于 canonical 实体一定物理删除。DELETE Projector 仍保持跳过。
 - 全量/补偿读取必须允许流式/迭代处理，不应建立在一次性 List 全量加载上。人工 Preview 工具例外，它们不是生产大数据读取路径。
 - `fullRebuild` 是显式危险操作，服务启动不得自动 clearProject/fullRebuild。
-- JDBC polling 当前只覆盖 `watermark > ?` 的 UPSERT 发现；hard DELETE、watermark 持久化、同时间戳晚到处理均属于已知边界。
+- JDBC polling 当前只覆盖 `watermark > effectiveSince` 的 UPSERT 发现；checkpoint 已持久化并带 lookback，但 hard DELETE 自动发现和窗口外极晚记录仍属于已知边界。
 - 查询不得随机抽样、top-N 或静默 LIMIT。完整 K-hop 返回约束范围内到达节点以及这些节点之间原图已有的完整关系。
 - QueryService 不负责空间/业务计算。缺失的 `RouteSegment ↔ Airspace` 等派生事实必须由独立计算模块形成后再写入图。
 - `queries/query-templates.yaml` 只允许受控 QuerySpec 模板，不接受 raw Cypher。

@@ -6,7 +6,7 @@
 
 截至当前基线，已报告并通过：
 
-- Maven：144 tests，0 failures，0 errors，4 skipped，BUILD SUCCESS；
+- Maven：148 tests，0 failures，0 errors，4 skipped，BUILD SUCCESS；
 - Viewer：27/27 tests passed；
 - Viewer build：成功；
 - G6 正式浏览器 Gate：默认 G6、展开/收起、pin/unpin、标签模式通过，浏览器 console error 为 0；
@@ -24,6 +24,9 @@
 - API health/entity/one-hop/k-hop/path/schema 与错误模型；
 - 稳定 `kg_uid`，不暴露 Neo4j internal id / elementId；
 - 多来源实体 contribution 的 canonical 重建与冲突回滚。
+- deleteProjection 在同一 Neo4j write transaction 内取得 UID before-state 并删除投影；
+- 删除一个实体 contribution 后 canonical 仍可由其他来源保留；
+- 关系-only 投影删除时返回关系 UID 和两个端点 anchor，重复 DELETE 返回空摘要。
 
 早期文档中“Neo4j Gate 尚未执行”“当前没有 Maven/Neo4j”已经失效。
 
@@ -61,6 +64,9 @@
 - checkpoint JSON 损坏明确失败，多 scope 保存互不覆盖；
 - JDBC 流式 iterator 在正常和异常路径关闭；
 - recent event cache 有界，失败事件可以重试；
+- 显式 DELETE notice 携带 GraphStore 删除事务返回的 entity/relationship/anchor UID 摘要；
+- deleteProjection 失败时不发布 notice，eventId 不会错误标记成功；
+- NeighborhoodProjector 仍返回 SKIPPED_DELETE，AssociationProjector 仍不处理 DELETE；
 - 服务 sources 为空时进入 Query/API-only，不自动执行 fullRebuild。
 
 ## 5. 当前查询与关联验证

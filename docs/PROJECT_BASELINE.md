@@ -101,6 +101,15 @@ timestamp polling 仍不自动发现 hard DELETE，也不能保证窗口以外�
 
 事件重复抑制只使用有界进程内 recent-event cache，不提供 exactly-once 保证。
 
+上游明确提供 `ChangeEvent.DELETE + SourceRef` 时，`GraphStore.deleteProjection` 会在同一个 Neo4j write
+transaction 中先取得该 SourceRef 的 `GraphProjectionSnapshot` UID 摘要，再把它的当前投影替换为空。
+摘要中的 entityUids 表示原 contribution，即使其他来源仍使 canonical 实体继续存在也会保留；
+relationshipUids 只包含该 SourceRef 直接拥有的关系，anchorEntityUids 还包含这些关系的两端。
+删除成功后 `GraphChangeNotice.DELETE` 携带该摘要；重复 DELETE 或原本无投影时返回空摘要。
+
+这不表示 JDBC polling 已能发现 hard DELETE。GraphStore 提交与 notice listener 也不是持久化 outbox；
+当前只保证成功返回的 before-state 与删除事务一致，不保证 notice exactly-once 或绝不丢失。
+
 ## 7. 查询与 GraphDTO
 
 查询主能力包括：
@@ -181,7 +190,6 @@ Java 是正式语义核心。Python 仅允许用于外围准备、实验或测�
 - Kafka/Debezium/完整 CDC 平台；
 - GDS/n10s/LLM 作为基础闭环硬依赖；
 - JDBC hard DELETE 自动发现；
-- watermark 持久化；
 - 空间拓扑派生；
 - 多来源关系 contribution；
 - association outward sink；
