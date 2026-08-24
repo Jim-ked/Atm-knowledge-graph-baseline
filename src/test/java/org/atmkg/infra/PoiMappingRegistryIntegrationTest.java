@@ -9,6 +9,8 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.atmkg.core.error.MappingValidationException;
@@ -17,8 +19,10 @@ import org.atmkg.core.model.OntologySchema;
 import org.atmkg.core.model.SourceRecord;
 import org.atmkg.core.model.mapping.EntityMappingSpec;
 import org.atmkg.core.model.mapping.MappingCatalog;
+import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.atmkg.fixture.CsvFixtureSourceAdapter;
 import org.atmkg.fixture.FixtureDataGenerator;
@@ -67,10 +71,22 @@ class PoiMappingRegistryIntegrationTest {
         OntologySchema schema = new JenaOntologyService().load(Path.of("ontology/atm_knowledge_graph.ttl"));
         PoiMappingRegistry registry = new PoiMappingRegistry();
         MappingCatalog before = registry.load(copy, schema);
+        Map<String, List<List<String>>> originalRows = workbookRows(copy);
         registry.refreshFromOntology(copy, schema);
         MappingCatalog after = registry.load(copy, schema);
         assertEquals(before.getEntities().size(), after.getEntities().size());
         assertFalse(after.getEntities().isEmpty());
+
+        Map<String, List<List<String>>> refreshedRows = workbookRows(copy);
+        for (Map.Entry<String, List<List<String>>> entry : originalRows.entrySet()) {
+            List<List<String>> rows = refreshedRows.get(entry.getKey());
+            assertTrue(rows.size() >= entry.getValue().size());
+            assertEquals(entry.getValue(), rows.subList(0, entry.getValue().size()),
+                    () -> entry.getKey() + " 的人工行被删除、改名或覆盖");
+            rows.subList(entry.getValue().size(), rows.size()).forEach(row ->
+                    assertTrue(row.contains(PoiMappingRegistry.PENDING),
+                            () -> entry.getKey() + " 的刷新新增行不是待映射行：" + row));
+        }
     }
 
     @Test
@@ -111,6 +127,29 @@ class PoiMappingRegistryIntegrationTest {
 
         assertThrows(MappingValidationException.class,
                 () -> new PoiMappingRegistry().validate(incompatible, schema));
+    }
+
+    private Map<String, List<List<String>>> workbookRows(Path path) throws Exception {
+        Map<String, List<List<String>>> result = new LinkedHashMap<>();
+        DataFormatter formatter = new DataFormatter();
+        try (Workbook workbook = new XSSFWorkbook(Files.newInputStream(path))) {
+            for (String sheetName : List.of("实体映射", "属性映射", "关系映射")) {
+                Sheet sheet = workbook.getSheet(sheetName);
+                List<List<String>> rows = new ArrayList<>();
+                for (int rowIndex = 0; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
+                    Row row = sheet.getRow(rowIndex);
+                    List<String> cells = new ArrayList<>();
+                    if (row != null) {
+                        for (int column = 0; column < row.getLastCellNum(); column++) {
+                            cells.add(formatter.formatCellValue(row.getCell(column)).trim());
+                        }
+                    }
+                    rows.add(cells);
+                }
+                result.put(sheetName, rows);
+            }
+        }
+        return result;
     }
 
     private static final String NS = "urn:atm-knowledge-graph:";

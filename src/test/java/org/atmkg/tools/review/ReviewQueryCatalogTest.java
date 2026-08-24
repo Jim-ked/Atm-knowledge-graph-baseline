@@ -15,7 +15,6 @@ class ReviewQueryCatalogTest {
     void loadsTheSingleReviewTemplateCatalogWithoutFixtureSpecificBrowserParameters() {
         ReviewQueryCatalog catalog = ReviewQueryCatalog.load(Path.of("review/queries.yaml"));
 
-        assertEquals("atm-knowledge-graph", catalog.defaultProjectId());
         assertEquals(8, catalog.templates().size());
         assertEquals(ReviewQueryTemplate.Locator.SINGLE, catalog.template("entity").locator());
         assertEquals(ReviewQueryTemplate.Locator.PAIR, catalog.template("path").locator());

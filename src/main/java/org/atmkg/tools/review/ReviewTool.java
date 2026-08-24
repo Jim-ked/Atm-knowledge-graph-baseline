@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.atmkg.core.ProjectConstants;
 import org.atmkg.infra.neo4j.Neo4jConnectionSettings;
 import org.atmkg.infra.neo4j.Neo4jDriverFactory;
 import org.neo4j.driver.Driver;
@@ -25,7 +26,8 @@ public final class ReviewTool {
         Path root = args.length == 0 ? Path.of(".").toAbsolutePath().normalize()
                 : Path.of(args[0]).toAbsolutePath().normalize();
         ReviewQueryCatalog catalog = ReviewQueryCatalog.load(root.resolve("review/queries.yaml"));
-        Neo4jConnectionSettings settings = Neo4jConnectionSettings.fromEnvironment(catalog.defaultProjectId(), 500);
+        Neo4jConnectionSettings settings = Neo4jConnectionSettings.fromEnvironment(
+                ProjectConstants.PROJECT_ID, 500);
         try (Driver driver = Neo4jDriverFactory.create(settings);
              BufferedReader input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
              PrintWriter output = new PrintWriter(System.out, true)) {
@@ -69,7 +71,8 @@ public final class ReviewTool {
             }
             ReviewQueryTemplate template = templates.get(index);
             try {
-                Map<String, Object> parameters = collectParameters(template, catalog.defaultProjectId(), input, output);
+                Map<String, Object> parameters = collectParameters(
+                        template, ProjectConstants.PROJECT_ID, input, output);
                 Map<String, String> literals = collectLiterals(template, input, output);
                 String cypher = template.render(literals);
                 String browserCypher = BrowserCypherRenderer.render(cypher, parameters);

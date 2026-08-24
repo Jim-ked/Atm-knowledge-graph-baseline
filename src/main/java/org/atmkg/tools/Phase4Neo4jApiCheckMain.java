@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Set;
 import org.atmkg.api.http.ApiConfig;
 import org.atmkg.api.http.KgApiServer;
+import org.atmkg.core.ProjectConstants;
 import org.atmkg.core.model.SourceScope;
 import org.atmkg.core.model.mapping.EntityMappingSpec;
 import org.atmkg.core.model.mapping.MappingCatalog;
@@ -54,11 +55,13 @@ public final class Phase4Neo4jApiCheckMain {
         Path root = args.length == 0
                 ? Path.of(".").toAbsolutePath().normalize()
                 : Path.of(args[0]).toAbsolutePath().normalize();
-        Neo4jConnectionSettings neo4j = Neo4jConnectionSettings.fromEnvironment("atm-knowledge-graph", 500);
+        Neo4jConnectionSettings neo4j = Neo4jConnectionSettings.fromEnvironment(
+                ProjectConstants.PROJECT_ID, 500);
         var schema = new JenaOntologyService().load(root.resolve("ontology/atm_knowledge_graph.ttl"));
         MappingCatalog catalog = new PoiMappingRegistry().load(
                 root.resolve("fixtures/mapping/fixture_mapping.xlsx"), schema);
-        DeterministicIdentityResolver ids = new DeterministicIdentityResolver(NS);
+        DeterministicIdentityResolver ids =
+                new DeterministicIdentityResolver(ProjectConstants.IDENTITY_NAMESPACE);
         DefaultMappingEngine mapping = new DefaultMappingEngine(catalog, ids);
         CsvFixtureSourceAdapter fixture = new CsvFixtureSourceAdapter(
                 "fixture", root.resolve("fixtures/generated/small"), KEYS);
@@ -232,12 +235,14 @@ public final class Phase4Neo4jApiCheckMain {
         Set<String> nodeIds = new HashSet<>();
         for (JsonNode node : graph.path("nodes")) {
             String id = node.path("id").asText();
-            require(id.startsWith(NS + "entity:"), "节点未使用稳定 kg_uid：" + id);
+            require(id.startsWith(ProjectConstants.IDENTITY_NAMESPACE + "entity:"),
+                    "节点未使用稳定 kg_uid：" + id);
             nodeIds.add(id);
         }
         for (JsonNode relationship : graph.path("relationships")) {
             String id = relationship.path("id").asText();
-            require(id.startsWith(NS + "rel:"), "关系未使用稳定 kg_uid：" + id);
+            require(id.startsWith(ProjectConstants.IDENTITY_NAMESPACE + "rel:"),
+                    "关系未使用稳定 kg_uid：" + id);
             require(nodeIds.contains(relationship.path("source").asText())
                     && nodeIds.contains(relationship.path("target").asText()), "关系端点未使用 GraphDTO node.id");
         }

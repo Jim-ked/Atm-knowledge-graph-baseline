@@ -1,6 +1,5 @@
 version: 2
 purpose: Optional ReviewTool and Neo4j Browser inspection templates; not a QueryService contract.
-default_project_id: atm-knowledge-graph
 
 # locator controls only ReviewTool prompting. All values except the bounded path depth are
 # bound as Neo4j Driver parameters. The templates remain directly usable as ordinary Cypher.

@@ -13,6 +13,7 @@ final class MappingIriResolver {
         String value = trim(raw);
         if (value.isEmpty() || isPending(value)) return value;
         if (allowed.containsKey(value)) return value;
+        if (isCompleteIri(value)) return value;
         String local = localName(value);
         List<String> matches = allowed.keySet().stream()
                 .filter(iri -> localName(iri).equals(local))
@@ -31,6 +32,12 @@ final class MappingIriResolver {
 
     static boolean isPending(String value) { return "[待映射]".equals(trim(value)); }
     static String trim(String value) { return value == null ? "" : value.trim(); }
+
+    private static boolean isCompleteIri(String value) {
+        return value.regionMatches(true, 0, "urn:", 0, 4)
+                || value.regionMatches(true, 0, "http://", 0, 7)
+                || value.regionMatches(true, 0, "https://", 0, 8);
+    }
 
     private static String localName(String value) {
         String v = trim(value);

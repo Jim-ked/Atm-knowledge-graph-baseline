@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import org.atmkg.core.ProjectConstants;
 import org.atmkg.core.model.SourceScope;
 import org.atmkg.core.spi.SyncService;
 import org.atmkg.infra.neo4j.Neo4jConnectionSettings;
@@ -49,7 +50,8 @@ public final class SyncControlMain {
             }
 
             var schema = new JenaOntologyService().load(root.resolve("ontology/atm_knowledge_graph.ttl"));
-            Neo4jConnectionSettings neo4j = Neo4jConnectionSettings.fromEnvironment("atm-knowledge-graph", 500);
+            Neo4jConnectionSettings neo4j = Neo4jConnectionSettings.fromEnvironment(
+                    ProjectConstants.PROJECT_ID, 500);
             Driver driver = Neo4jDriverFactory.create(neo4j);
             SyncRuntimeAssembler.SyncAssembly assembly = null;
             try {

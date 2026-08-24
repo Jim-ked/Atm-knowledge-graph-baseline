@@ -5,6 +5,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.atmkg.api.http.ApiConfig;
 import org.atmkg.api.http.KgApiServer;
+import org.atmkg.core.ProjectConstants;
 import org.atmkg.core.spi.QueryService;
 import org.atmkg.infra.neo4j.Neo4jConnectionSettings;
 import org.atmkg.infra.neo4j.Neo4jDriverFactory;
@@ -36,7 +37,8 @@ public final class KgServiceMain {
         var schema = new JenaOntologyService().load(root.resolve("ontology/atm_knowledge_graph.ttl"));
         QueryTemplateRegistry queryTemplates = QueryTemplateRegistry.load(
                 root.resolve("queries/query-templates.yaml"));
-        Neo4jConnectionSettings neo4j = Neo4jConnectionSettings.fromEnvironment("atm-knowledge-graph", 500);
+        Neo4jConnectionSettings neo4j = Neo4jConnectionSettings.fromEnvironment(
+                ProjectConstants.PROJECT_ID, 500);
         Driver driver = Neo4jDriverFactory.create(neo4j);
         QueryService queryService = new TemplateAwareQueryService(
                 new Neo4jQueryService(driver, neo4j, api.getSchemaVersion()), queryTemplates);

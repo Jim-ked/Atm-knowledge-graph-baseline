@@ -151,7 +151,9 @@ HTTP 服务由轻量 `KgApiServer` 提供，配置位于 `config/api.yaml`。当
 - `api.yaml`：服务直接读取；
 
 `queries/query-templates.yaml` 也由服务直接读取，但位于 queries 目录，不属于 `config/`。
-projectId、UID namespace、Neo4j 环境变量、唯一正式 TTL 和查询完整性原则见
+正式 projectId 和 UID namespace 集中在 `src/main/java/org/atmkg/core/ProjectConstants.java`，两者都不是
+普通运行参数。`IDENTITY_NAMESPACE` 与本体 IRI 当前文本可能相同，但用途不同；本体 IRI 仍只从正式
+TTL/Mapping 获取，不通过该常量生成。Neo4j 环境变量、唯一正式 TTL 和查询完整性原则见
 `docs/固定项与运行配置说明.md`。
 
 修改配置前应以 `tools/START_HERE.txt` 和当前代码注释为准。

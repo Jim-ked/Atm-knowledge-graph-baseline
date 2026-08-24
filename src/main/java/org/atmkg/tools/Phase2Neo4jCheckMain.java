@@ -9,6 +9,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.atmkg.core.ProjectConstants;
 import org.atmkg.core.model.GraphDTO;
 import org.atmkg.core.model.GraphStoreStats;
 import org.atmkg.core.model.OntologySchema;
@@ -46,11 +47,13 @@ public final class Phase2Neo4jCheckMain {
 
     public static void main(String[] args) {
         Path root = args.length == 0 ? Path.of(".").toAbsolutePath().normalize() : Path.of(args[0]).toAbsolutePath().normalize();
-        Neo4jConnectionSettings settings = Neo4jConnectionSettings.fromEnvironment("atm-knowledge-graph", 500);
+        Neo4jConnectionSettings settings = Neo4jConnectionSettings.fromEnvironment(
+                ProjectConstants.PROJECT_ID, 500);
         OntologySchema schema = new JenaOntologyService().load(root.resolve("ontology/atm_knowledge_graph.ttl"));
         Neo4jOntologyMetadata metadata = Neo4jOntologyMetadata.from(schema);
         MappingCatalog catalog = new PoiMappingRegistry().load(root.resolve("fixtures/mapping/fixture_mapping.xlsx"), schema);
-        DeterministicIdentityResolver ids = new DeterministicIdentityResolver(NS);
+        DeterministicIdentityResolver ids =
+                new DeterministicIdentityResolver(ProjectConstants.IDENTITY_NAMESPACE);
         DefaultMappingEngine mapping = new DefaultMappingEngine(catalog, ids);
         CsvFixtureSourceAdapter base = new CsvFixtureSourceAdapter("fixture", root.resolve("fixtures/generated/small"), KEYS);
         CsvFixtureSourceAdapter changed = new CsvFixtureSourceAdapter("fixture", root.resolve("fixtures/generated/small/changed"), KEYS);

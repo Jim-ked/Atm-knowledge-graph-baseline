@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import org.atmkg.core.ProjectConstants;
 import org.atmkg.core.error.GraphStoreException;
 import org.atmkg.core.model.ChangeEvent;
 import org.atmkg.core.model.GraphStoreStats;
@@ -50,11 +51,13 @@ public final class Phase3Neo4jCheckMain {
         Path root = args.length == 0
                 ? Path.of(".").toAbsolutePath().normalize()
                 : Path.of(args[0]).toAbsolutePath().normalize();
-        Neo4jConnectionSettings settings = Neo4jConnectionSettings.fromEnvironment("atm-knowledge-graph", 500);
+        Neo4jConnectionSettings settings = Neo4jConnectionSettings.fromEnvironment(
+                ProjectConstants.PROJECT_ID, 500);
         var schema = new JenaOntologyService().load(root.resolve("ontology/atm_knowledge_graph.ttl"));
         MappingCatalog catalog = new PoiMappingRegistry().load(
                 root.resolve("fixtures/mapping/fixture_mapping.xlsx"), schema);
-        DeterministicIdentityResolver ids = new DeterministicIdentityResolver(NS);
+        DeterministicIdentityResolver ids =
+                new DeterministicIdentityResolver(ProjectConstants.IDENTITY_NAMESPACE);
         DefaultMappingEngine mapping = new DefaultMappingEngine(catalog, ids);
         CsvFixtureSourceAdapter base = new CsvFixtureSourceAdapter(
                 "fixture", root.resolve("fixtures/generated/small"), KEYS);

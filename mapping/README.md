@@ -25,6 +25,10 @@ sourceId + sourceObject + SourceRecord 字段路径
 
 普通新增业务字段通常只需确认 TTL 已有属性并填写本 Sheet，不要修改 DefaultMappingEngine。
 
+Excel 和 JDBC source 现在都可以在写入 Neo4j 前用 `source-preview` 查看 SourceRecord，再用
+`source-mapping-preview` 查看 MappingResult。正式 JDBC 应明确指定 sourceId/sourceObject 和 limit；
+完整命令及排障顺序见 `tools/START_HERE.txt`。
+
 ## 关系映射
 
 用于确定源记录中已经明确存在的端点定位字段如何形成 object property 关系。
@@ -38,6 +42,30 @@ sourceId + sourceObject + SourceRecord 字段路径
 TTL 新增类/属性/关系后，可以通过 `Phase1CheckMain --refresh` 向工作簿追加 `[待映射]` 行。刷新不得覆盖人工已填写内容。
 
 `[待映射]` 行在 loader 中会被跳过，不是已生效配置；必须人工补齐 sourceId/sourceObject/businessKey/字段路径/locator 后再运行测试和同步。
+
+## 本体或 Mapping 改了以后怎么处理
+
+### A. 新增普通属性
+
+新增 datatype property 时，先改唯一正式 TTL，执行 `Phase1CheckMain --refresh`，再在 `字段映射.xlsx` 补齐新增的 `[待映射]` 行并验证 Mapping。然后重启服务，让 TTL 和 Mapping 重新加载；对受影响的 sourceObject 执行 resync 或 fullSync，最后用 review 检查结果。普通属性新增不需要修改 `DefaultMappingEngine`、`Neo4jGraphStore` 或 `QueryService`。
+
+### B. 新增普通实体或关系
+
+基本流程与新增属性相同。新增实体时要人工确认业务主键、UID 规则以及 sourceId/sourceObject；新增关系时要人工确认起点类、终点类、locator 以及 TTL 中的 domain/range，程序不会自动猜。
+
+### C. 删除或改名 Class / Property
+
+refresh 只追加新术语，不会自动删除旧 Mapping，也不会自动改名。失效的旧完整 IRI 会在 Mapping 校验时报错；人工确认后再修改或删除相应行。完成后重启服务并重新同步受影响数据；变化范围很大或无法可靠判断时，再使用 fullRebuild。项目没有自动 Mapping migration。
+
+Mapping 删除某属性或关系后，需要重新同步对应源记录，`replaceProjection` 才会清掉该 SourceRef 不再生成的旧属性或旧关系。仅修改 TTL/Mapping 文件不会自动改变 Neo4j。
+
+### D. 身份相关变化
+
+Class IRI、实体业务主键或 UID namespace 变化可能改变实体 `kg_uid`，并影响关系端点和外部引用；这类变化要先人工评估，通常按全图重建或专门的身份迁移处理，不能靠普通 `--refresh`。ObjectProperty IRI 变化也会改变关系 UID。
+
+### E. 删除 sourceObject / 数据源
+
+从 `sources.yaml` 删除 object 或 source，不会自动通知 Neo4j 删除旧投影。需要先人工清理对应投影，或者确认正式数据源范围完整后执行 fullRebuild；当前没有自动 source retirement。
 
 ## 修改原则
 

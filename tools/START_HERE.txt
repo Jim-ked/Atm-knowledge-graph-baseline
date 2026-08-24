@@ -11,7 +11,7 @@
 
 数据读取
   位置：infra/source
-  问题：Excel/Oracle 数据读不出来时先看这里。Excel 可用 source-preview；当前 JDBC 没有 preview。
+  问题：Excel/Oracle 数据读不出来时先看这里；两者都先用 source-preview 看 SourceRecord。
 
 本体和字段映射
   位置：infra/ontology、infra/mapping、infra/identity
@@ -65,6 +65,10 @@ Oracle 当前按“配置 → 单条 resync → review”核验，不要把单�
 
    这四个名字写死在 Neo4jConnectionSettings。固定项说明见
    docs\固定项与运行配置说明.md。
+
+   正式 projectId 和 UID namespace 集中在
+   src\main\java\org\atmkg\core\ProjectConstants.java；它们不是普通运行参数。IDENTITY_NAMESPACE 与
+   本体 IRI 当前文本可能相同，但用途不同，不要用该常量拼 Class/Property IRI；本体 IRI 仍看唯一 TTL。
 
 4. 使用 Docker Neo4j 5.26 开发实例：
 
@@ -218,16 +222,21 @@ watermarkField 最好有数据库索引。当前 SQL 是 WHERE UPDATED_AT > ?，
 ResultSet.getTimestamp 转 Instant；Oracle DATE/TIMESTAMP 列必须能稳定进行 JDBC Timestamp 比较。
 NUMBER/VARCHAR2/DATE/TIMESTAMP 均通过 JDBC 通用 ResultSet 读取，不进入 Core 类型体系。
 
-当前没有 JDBC source-preview。先运行：
+配置和环境变量就绪后，先在写图前查看 JDBC SourceRecord：
 
-  mvn.cmd -Dtest=JdbcSourceAdapterTest test
-  tools\sync.cmd
+  tools\source-preview.cmd config\sources.yaml jdbc-main example-object 5
 
-在 sync 菜单选“查看当前同步配置”，正常应出现 jdbc-main / example-object / jdbc /
-watermark=是。然后先选“重新同步一条记录”，输入按 keyFields 顺序形成的 sourceKey。
+正常：只读取并显示前 5 条，包含 sourceKey、字段名和字段值；同时显示 table/view、keyFields 和可选
+watermarkField，不显示密码。填写或检查 Mapping 后，再在写图前查看 MappingResult：
+
+  tools\source-mapping-preview.cmd config\sources.yaml mapping\字段映射.xlsx jdbc-main example-object 5
+
+然后执行 tools\sync.cmd，先选“重新同步一条记录”，输入 source-preview 显示的 sourceKey，最后用
+tools\review.cmd 检查图。开发/排障可以使用 Preview；正式同步仍由 tools\sync.cmd 执行。
 
 连接失败先查 driver/url/环境变量/SELECT 权限；缺列查 table/view 实际结果。新增表不要改
-JdbcSourceAdapter，只有通用 JDBC 标识符、游标、PreparedStatement 读取机制变化才进该类。
+JdbcSourceAdapter 或 SourceAdapterFactory；只有通用 JDBC 标识符、游标、PreparedStatement 读取机制变化
+才进 JdbcSourceAdapter。只有正式增加第三种 SourceAdapter 类型时才改 SourceAdapterFactory。
 以后更换其他 JDBC 数据库时，原则上只替换 runtime driver、URL 和源对象配置，不修改 Core。
 
 
@@ -249,13 +258,12 @@ urn:atm-knowledge-graph:routeName。
      必要转换     留空，或仅使用 trim/upper/lower/integer/long/decimal/boolean
      是否必填     true 或 false
 
-3. Excel 场景先看 mapping 结果：
+3. 先明确指定一个 sourceObject 查看 mapping 结果，Excel/JDBC 命令相同：
 
-     tools\source-mapping-preview.cmd config\sources.yaml mapping\字段映射.xlsx 3
+     tools\source-mapping-preview.cmd config\sources.yaml mapping\字段映射.xlsx <sourceId> <sourceObject> 5
 
-   该工具会遍历传入配置中的全部 source，目前只支持 Excel。如果正式 sources.yaml 同时包含 JDBC，
-   不要用它做混合配置预览；先用只含目标 Excel source 的开发配置核验，JDBC mapping 用单条 resync
-   后的 Mapping/Sync 错误与 Review 结果排查。
+   工具复用正式 SourceAdapter，只消费前 5 条 SourceRecord，不写 Neo4j。旧的三参数 Excel 开发用法仍可用；
+   正式配置包含 JDBC 时必须使用上面的五参数形式，避免默认遍历全部表或视图。
 
 4. 再只重同步一条：
 
@@ -267,10 +275,8 @@ urn:atm-knowledge-graph:routeName。
 失败：SourceRecord 没字段回任务 1/2；有字段但 MappingResult 没属性，核对 sourceId、源对象、
 源字段/路径和是否必填。不要修改 DefaultMappingEngine、Neo4jGraphStore 或 QueryService。
 
-如果这个 sourceObject 是 JDBC，不执行上面的两个 Excel preview：当前没有 JDBC preview，JdbcSourceAdapter
-单元测试不代表真实数据库连通。改为核对 config\sources.yaml 的 driver/url/table-or-view/keyFields、
-usernameEnv/passwordEnv 对应环境变量和 SELECT 权限，然后 tools\sync.cmd → 3. 重新同步一条记录，
-最后 tools\review.cmd 验证图。
+JDBC 连接失败时核对 config\sources.yaml 的 driver/url/table-or-view/keyFields、usernameEnv/passwordEnv
+对应环境变量和 SELECT 权限；Preview 失败不会写入 Neo4j。
 
 
 任务 4：我要新增一种实体
@@ -290,13 +296,12 @@ usernameEnv/passwordEnv 对应环境变量和 SELECT 权限，然后 tools\sync.
      UID规则                class-local-business-key
 
 4. 在“属性映射”Sheet 至少映射业务键和需要的显示属性。
-5. 如果实体来自 Excel：
+5. Excel/JDBC 都先明确指定目标入口预览：
 
      tools\source-preview.cmd config\sources.yaml <sourceId> <sourceObject> 5
-     tools\source-mapping-preview.cmd config\sources.yaml mapping\字段映射.xlsx 3
+     tools\source-mapping-preview.cmd config\sources.yaml mapping\字段映射.xlsx <sourceId> <sourceObject> 5
 
-   如果实体来自 JDBC：当前没有 JDBC preview；单元测试不代表真实 DB 连通。核对 sources.yaml/env/SELECT
-   权限，执行 tools\sync.cmd → 3. 重新同步一条记录，再执行 tools\review.cmd。
+   核对结果后执行 tools\sync.cmd → 3. 重新同步一条记录，再执行 tools\review.cmd。
 
 6. 两种来源都执行 mvn.cmd test；确认单条 resync 正确后，再按需要 fullSync 一个入口。
 
@@ -525,8 +530,8 @@ tools\sync.cmd 菜单：
 Excel 分支：
 
 1. 运行 source-preview，抄下 sourceId、sourceObject、sourceKey 和一个实际字段名。
-2. 运行 tools\source-mapping-preview.cmd config\sources.yaml mapping\字段映射.xlsx 3。
-   该工具读取整个目标 Excel 入口，再只显示 sample limit 条 MappingResult；不要拿它测试超大文件。
+2. 运行 tools\source-mapping-preview.cmd config\sources.yaml mapping\字段映射.xlsx
+   <sourceId> <sourceObject> 5。工具只消费前 5 条 SourceRecord。
 3. 打开 mapping\字段映射.xlsx：
 
    “实体映射”必须有相同 sourceId + sourceObject；
@@ -539,11 +544,13 @@ Excel 分支：
 
 JDBC 分支：
 
-1. 当前没有 JDBC preview；不要把 source-preview/source-mapping-preview 当成 JDBC 工具。
-2. 核对 config\sources.yaml 的 driver、url、table/view、keyFields、watermarkField，以及
-   usernameEnv/passwordEnv 指向的环境变量和 SELECT 权限。JdbcSourceAdapterTest 只是不连库的边界测试。
-3. 执行 tools\sync.cmd → 3. 重新同步一条记录，输入按 keyFields 生成的 sourceKey。
-4. 执行 tools\review.cmd 验证实体、属性、关系。
+1. 运行 tools\source-preview.cmd config\sources.yaml <sourceId> <sourceObject> 5，确认 sourceKey 和字段。
+2. 填写或检查字段映射.xlsx。
+3. 运行 tools\source-mapping-preview.cmd config\sources.yaml mapping\字段映射.xlsx
+   <sourceId> <sourceObject> 5，确认 MappingResult；该过程不需要 Neo4j。
+4. 连接失败时核对 driver、url、table/view、keyFields、watermarkField、账号密码环境变量和 SELECT 权限。
+5. 执行 tools\sync.cmd → 3. 重新同步一条记录，输入 Preview 显示的 sourceKey。
+6. 执行 tools\review.cmd 验证实体、属性、关系。
 
 定位：
 
@@ -580,35 +587,57 @@ API GraphDTO 正确而页面失败：才查 viewer/src 和浏览器 console。
 不要为 Viewer 显示问题修改 GraphDTO、TTL、MappingEngine 或 Neo4jGraphStore。
 
 
-任务 13：我修改了本体，下一步做什么
-====================================
+任务 13：本体或 Mapping 改了以后怎么处理
+==========================================
 
-唯一正式本体是 ontology\atm_knowledge_graph.ttl，服务直接读取该路径；历史版本只由 Git 保存。
+唯一正式本体是 ontology\atm_knowledge_graph.ttl，人工 Mapping 入口是 mapping\字段映射.xlsx。
+历史版本只由 Git 保存。改文件不等于 Neo4j 已变化：正式运行链必须重启 service 重新加载，再执行
+resync、fullSync 或经确认后的 fullRebuild。
 
-1. 修改 TTL 后，打开 mapping\字段映射.xlsx：
+A. 新增普通 datatype property
 
-   新 Class       → 补“实体映射”；
-   新 datatype property → 补“属性映射”；
-   新 object property   → 补“关系映射”。
+  1. 修改唯一 TTL；
+  2. 关闭 Excel，执行 --refresh：
 
-   不要把 [待映射] 行当作已生效 mapping。
+       mvn.cmd -q -DskipTests compile org.codehaus.mojo:exec-maven-plugin:3.5.0:java "-Dexec.mainClass=org.atmkg.tools.Phase1CheckMain" "-Dexec.args=--refresh"
 
-2. 如需把 TTL 新术语追加成 [待映射] 行，先关闭 Excel，再明确执行一次：
+  3. 在字段映射.xlsx 的“属性映射”中补齐新增的 [待映射] 行；
+  4. 运行 Phase1CheckMain（不带 --refresh），确认正式 Mapping 校验通过：
 
-     mvn.cmd -q -DskipTests compile org.codehaus.mojo:exec-maven-plugin:3.5.0:java "-Dexec.mainClass=org.atmkg.tools.Phase1CheckMain" "-Dexec.args=--refresh"
+       mvn.cmd -q -DskipTests compile org.codehaus.mojo:exec-maven-plugin:3.5.0:java "-Dexec.mainClass=org.atmkg.tools.Phase1CheckMain"
 
-   该命令会修改正式 mapping\字段映射.xlsx，但只追加缺失术语、不覆盖已填单元格。随后必须人工填写
-   sourceId/sourceObject/businessKey/字段路径/locator；[待映射] 行会被 loader 跳过。
+     再运行 mvn.cmd test；
+  5. 重启 service，使 TTL/Mapping 重新加载；
+  6. 对受影响 sourceObject 执行 resync 或 fullSync；
+  7. 用 tools\review.cmd 检查结果。
 
-3. 执行：
+  refresh 只追加缺失术语，不覆盖人工已填内容，也不会把 [待映射] 当正式 Mapping。普通属性新增
+  不需要修改 DefaultMappingEngine、Neo4jGraphStore 或 QueryService。
 
-     mvn.cmd test
+B. 新增普通实体或关系
 
-4. 对单条验证先 tools\sync.cmd → resync。确认 UID/关系正确后再决定 fullSync/fullRebuild。
-5. 用 tools\review.cmd 检查 class、relationship type、重复 UID 和一跳/K 跳。
+  基本步骤与 A 相同。新增实体还要人工确认业务主键、UID规则和 sourceId/sourceObject；新增关系还要
+  人工确认起点类、终点类、locator 以及 TTL 中的 domain/range。不要自动猜。
 
-普通 TTL 变化不要改 core/*。若修改 UID 业务主键或既有 class 身份，先停下评估迁移，不能用
-DeterministicIdentityResolver 临时兼容旧数据。
+C. 删除或改名 Class / Property
+
+  refresh 不会自动删除旧 Mapping，也不会自动改名。旧完整 IRI 失效后应由 Mapping 校验明确报错，
+  人工确认后再修改或删除对应行。然后重启服务并重新同步受影响数据；变化范围很大、删除大量 Mapping
+  或无法可靠判断范围时，确认 sources.yaml 完整后再使用 fullRebuild。不要开发自动 Mapping migration。
+
+  Mapping 删除某属性或关系后，需要重新同步对应源记录，replaceProjection 才会清掉该 SourceRef
+  不再生成的旧属性或旧关系。
+
+D. 身份相关变化
+
+  Class IRI、实体业务主键、UID namespace 的变化可能改变实体 kg_uid，并影响关系端点和外部引用。
+  这不是普通修改：必须先人工评估，通常按全图重建或专门的身份迁移处理，不能用普通 --refresh。
+  ObjectProperty IRI 变化也会改变关系 UID。
+
+E. 删除 sourceObject / 数据源
+
+  从 sources.yaml 删除 object 或 source，不会自动让 Neo4j 删除旧投影。先人工清理对应投影，或者确认
+  正式数据源范围后执行 fullRebuild。当前没有自动 source retirement。
 
 
 任务 14：两个 sourceObject 要补充同一个实体
@@ -644,10 +673,11 @@ KGEntityContribution 是内部技术节点，不能出现在 QueryService/GraphD
     启动 KgServiceMain、Query API 和 G6 Viewer；sources 非空时装配同步，polling 启用时写图。
 
   tools\source-preview.cmd
-    只检查 Excel → SourceRecord，不写 Neo4j；无参数优先 sources.local.yaml。
+    检查 Excel/JDBC → SourceRecord，不写 Neo4j；无参数优先 sources.local.yaml。
 
   tools\source-mapping-preview.cmd
-    只检查 Excel SourceRecord → MappingResult；无参数使用 fixture mapping，不写 Neo4j。
+    检查 Excel/JDBC SourceRecord → MappingResult；无参数使用 fixture mapping，不写 Neo4j。
+    正式 JDBC 使用 sources + mapping + sourceId + sourceObject + limit 五参数形式。
 
   tools\sync.cmd
     读取正式 sources/sync/TTL/mapping，调用正式 SyncService，会写 Neo4j，不改源数据。

@@ -23,6 +23,7 @@ exit /b %RESULT%
 :usage
 echo Usage: tools\source-preview.cmd ^<sources.yaml^> ^<sourceId^> ^<objectName^> [limit]
 echo Example: tools\source-preview.cmd config\sources.local.yaml excel-main route-segment 5
+echo JDBC: tools\source-preview.cmd config\sources.yaml jdbc-main example-object 5
 exit /b 2
 
 :missing_maven

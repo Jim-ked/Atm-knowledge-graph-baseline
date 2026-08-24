@@ -7,25 +7,30 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import org.atmkg.core.model.SourceRecord;
 import org.atmkg.core.spi.SourceAdapter;
+import org.atmkg.infra.source.SourceAdapterFactory;
 import org.atmkg.infra.source.config.ConfiguredSource;
 import org.atmkg.infra.source.config.SourceConfig;
 import org.atmkg.infra.source.excel.ExcelSourceAdapter;
 
 /**
- * Excel 读取不符合预期时从本工具进入；不要为新增字段修改本类。无参数会优先
+ * Excel/JDBC 读取不符合预期时从本工具进入；不要为新增字段修改本类。无参数会优先
  * {@code config/sources.local.yaml}，检查正式源必须执行
  * {@code tools\source-preview.cmd config\sources.yaml <sourceId> <objectName> 5}。
  *
  * <p>只有人工输出格式或支持哪个既有 Adapter 的工具范围经确认变化时才改 Java。它只看 SourceRecord，
- * 不判断 mapping，也不写 Neo4j；字段已读到但图中没有应继续查字段映射.xlsx。当前不支持 JDBC 预览。
- * limit 只限制打印前几条；实现会先读取整个目标 Excel 入口并保留记录列表，不要用它做超大正式数据源
- * 的性能测试。
+ * 不判断 mapping，也不写 Neo4j；字段已读到但图中没有应继续查字段映射.xlsx。limit 限制工具消费的
+ * SourceRecord 数量，提前停止时会关闭可关闭的 iterator，不增加数据库厂商专用 SQL。
  */
 public final class SourcePreviewMain {
+    private static final SourceAdapterFactory SOURCE_ADAPTERS = new SourceAdapterFactory();
+
     private SourcePreviewMain() {}
 
     public static void main(String[] args) {
@@ -64,7 +69,7 @@ public final class SourcePreviewMain {
         }
         for (int i = 0; i < entries.size(); i++) {
             PreviewEntry entry = entries.get(i);
-            System.out.println((i + 1) + ". " + humanLabel(entry.objectConfig()));
+            System.out.println((i + 1) + ". " + humanLabel(entry.source(), entry.objectConfig()));
             System.out.println("   技术标识（排障用）：" + entry.source().getSourceId() + " / " + entry.objectName());
         }
         System.out.println("0. 退出");
@@ -105,24 +110,25 @@ public final class SourcePreviewMain {
     }
 
     private static void preview(Path configFile, String sourceId, String objectName, int limit) {
-
         Path projectRoot = Path.of(".").toAbsolutePath().normalize();
-
         SourceConfig config = SourceConfig.load(configFile);
         ConfiguredSource source = config.requireSource(sourceId);
-        SourceAdapter adapter = adapter(source, projectRoot);
+        SourceAdapter adapter = SOURCE_ADAPTERS.create(source, projectRoot);
+        preview(source, objectName, adapter, limit);
+    }
 
-        List<SourceRecord> records = new ArrayList<>();
-        for (SourceRecord record : adapter.readAll(objectName)) records.add(record);
+    static List<SourceRecord> preview(ConfiguredSource source, String objectName,
+                                      SourceAdapter adapter, int limit) {
+        Objects.requireNonNull(source, "source");
+        Objects.requireNonNull(adapter, "adapter");
 
         System.out.println("==== 1. 从哪里读取 ====");
         printPhysicalLocator(source, objectName, adapter);
-        System.out.println("技术标识（排障用）：sourceId=" + sourceId + " / sourceObject=" + objectName);
 
         System.out.println();
         System.out.println("==== 2. 读取结果 ====");
-        System.out.println("SourceRecord 总数：" + records.size());
-        System.out.println("默认显示前 " + Math.min(limit, records.size()) + " 条");
+        List<SourceRecord> records = readLimited(adapter.readAll(objectName), limit);
+        System.out.println("本次读取 SourceRecord：" + records.size() + " 条（limit=" + limit + "）");
 
         for (int i = 0; i < records.size() && i < limit; i++) {
             SourceRecord record = records.get(i);
@@ -137,21 +143,55 @@ public final class SourcePreviewMain {
 
         System.out.println();
         System.out.println("==== 3. 人工只核对这几项 ====");
-        printTips(source.getConfig().path("objects").path(objectName).path("recordMode").asText("row"));
+        if ("jdbc".equalsIgnoreCase(source.getAdapter())) printJdbcTips();
+        else printTips(source.getConfig().path("objects").path(objectName).path("recordMode").asText("row"));
+        return records;
     }
 
-    private static SourceAdapter adapter(ConfiguredSource source, Path projectRoot) {
-        if ("excel".equalsIgnoreCase(source.getAdapter())) {
-            return new ExcelSourceAdapter(source, projectRoot);
+    static List<SourceRecord> readLimited(Iterable<SourceRecord> records, int limit) {
+        Objects.requireNonNull(records, "records");
+        if (limit < 1) throw new IllegalArgumentException("limit 必须是正整数：" + limit);
+        Iterator<SourceRecord> iterator = records.iterator();
+        List<SourceRecord> result = new ArrayList<>(limit);
+        Throwable failure = null;
+        try {
+            while (result.size() < limit && iterator.hasNext()) result.add(iterator.next());
+            return List.copyOf(result);
+        } catch (RuntimeException | Error ex) {
+            failure = ex;
+            throw ex;
+        } finally {
+            closeIterator(iterator, failure);
         }
-        throw new IllegalArgumentException("source-preview 当前仅支持已接入的 excel adapter：" + source.getAdapter());
+    }
+
+    private static void closeIterator(Iterator<?> iterator, Throwable failure) {
+        if (!(iterator instanceof AutoCloseable closeable)) return;
+        try {
+            closeable.close();
+        } catch (Exception ex) {
+            if (failure != null) failure.addSuppressed(ex);
+            else throw new IllegalStateException("预览读取资源关闭失败", ex);
+        }
     }
 
     private static void printPhysicalLocator(ConfiguredSource source, String objectName, SourceAdapter adapter) {
         JsonNode config = source.getConfig();
+        JsonNode object = config.path("objects").path(objectName);
+        System.out.println("sourceId=" + source.getSourceId());
+        System.out.println("sourceObject=" + objectName);
+        System.out.println("adapter=" + source.getAdapter().toLowerCase(Locale.ROOT));
+        if ("jdbc".equalsIgnoreCase(source.getAdapter())) {
+            if (object.hasNonNull("table")) System.out.println("表：" + object.path("table").asText());
+            if (object.hasNonNull("view")) System.out.println("视图：" + object.path("view").asText());
+            System.out.println("keyFields：" + object.path("keyFields"));
+            if (object.hasNonNull("watermarkField")) {
+                System.out.println("watermarkField：" + object.path("watermarkField").asText());
+            }
+            return;
+        }
         JsonNode root = config.get("root");
         if (root != null && !root.isNull()) System.out.println("根目录：" + root.asText());
-        JsonNode object = config.path("objects").path(objectName);
         if (object.isMissingNode() || !object.isObject()) return;
         if (adapter instanceof ExcelSourceAdapter excel) {
             System.out.println("实际匹配文件：");
@@ -164,7 +204,12 @@ public final class SourcePreviewMain {
         if (object.has("orderBy")) System.out.println("orderBy：" + object.path("orderBy"));
     }
 
-    private static String humanLabel(JsonNode object) {
+    private static String humanLabel(ConfiguredSource source, JsonNode object) {
+        if ("jdbc".equalsIgnoreCase(source.getAdapter())) {
+            String relation = object.hasNonNull("table")
+                    ? object.path("table").asText() : object.path("view").asText("?");
+            return "JDBC / " + relation;
+        }
         return object.path("files").asText("(未配置文件模式)") + " / Sheet "
                 + object.path("sheet").asText("?") + " / " + humanMode(object.path("recordMode").asText("row"));
     }
@@ -222,6 +267,13 @@ public final class SourcePreviewMain {
         System.out.println("核对 3～5 条即可，不要求逐行人工检查。");
     }
 
+    private static void printJdbcTips() {
+        System.out.println("1. sourceKey 是否稳定且来自 keyFields。");
+        System.out.println("2. 字段名和字段值是否与表或视图一致。");
+        System.out.println("3. 配置 watermarkField 时，时间值是否正确。");
+        System.out.println("核对 3～5 条即可，不要求读取全表。");
+    }
+
     @SuppressWarnings("unchecked")
     private static void printMap(Map<String, Object> values, String indent) {
         for (Map.Entry<String, Object> entry : values.entrySet()) {
@@ -253,6 +305,7 @@ public final class SourcePreviewMain {
     private static void usage() {
         System.err.println("用法：SourcePreviewMain <sources.yaml> <sourceId> <objectName> [limit]");
         System.err.println("示例：tools\\source-preview.cmd config\\sources.local.yaml excel-main route-segment 5");
+        System.err.println("JDBC：tools\\source-preview.cmd config\\sources.yaml jdbc-main example-object 5");
     }
 
     private record PreviewEntry(ConfiguredSource source, String objectName, JsonNode objectConfig) {}

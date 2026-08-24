@@ -4,9 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import org.atmkg.core.ProjectConstants;
 import org.atmkg.core.model.OntologySchema;
 import org.atmkg.core.model.mapping.MappingCatalog;
 import org.atmkg.core.spi.SourceAdapter;
@@ -16,10 +16,9 @@ import org.atmkg.infra.mapping.DefaultMappingEngine;
 import org.atmkg.infra.mapping.PoiMappingRegistry;
 import org.atmkg.infra.neo4j.Neo4jConnectionSettings;
 import org.atmkg.infra.neo4j.Neo4jGraphStore;
+import org.atmkg.infra.source.SourceAdapterFactory;
 import org.atmkg.infra.source.config.ConfiguredSource;
 import org.atmkg.infra.source.config.SourceConfig;
-import org.atmkg.infra.source.excel.ExcelSourceAdapter;
-import org.atmkg.infra.source.jdbc.JdbcSourceAdapter;
 import org.atmkg.infra.trigger.JdbcPollingTriggerAdapter;
 import org.atmkg.service.sync.DefaultSyncService;
 import org.atmkg.service.sync.SyncRuntime;
@@ -36,7 +35,7 @@ import org.neo4j.driver.Driver;
  * 会造成启动清图。配置失败先查 sourceId/objects、polling scope 和 watermarkField，再查本类 validate。
  */
 final class SyncRuntimeAssembler {
-    private static final String IDENTITY_NAMESPACE = "urn:atm-knowledge-graph:";
+    private static final SourceAdapterFactory SOURCE_ADAPTERS = new SourceAdapterFactory();
 
     private SyncRuntimeAssembler() {}
 
@@ -64,8 +63,7 @@ final class SyncRuntimeAssembler {
 
     private static AssemblyPlan validate(Path root, SourceConfig sources, SyncRuntimeConfig sync) {
         for (ConfiguredSource source : sources.getSources().values()) {
-            String adapter = source.getAdapter().toLowerCase(Locale.ROOT);
-            if (!adapter.equals("excel") && !adapter.equals("jdbc")) {
+            if (!SOURCE_ADAPTERS.supports(source.getAdapter())) {
                 throw new IllegalArgumentException("未知 SourceAdapter：" + source.getAdapter()
                         + " @ " + source.getSourceId());
             }
@@ -110,11 +108,7 @@ final class SyncRuntimeAssembler {
         // 1. 根据正式 sources 配置创建物理数据源 Adapter。
         Map<String, SourceAdapter> adapters = new LinkedHashMap<>();
         for (ConfiguredSource source : plan.sources().getSources().values()) {
-            SourceAdapter adapter = switch (source.getAdapter().toLowerCase(Locale.ROOT)) {
-                case "excel" -> new ExcelSourceAdapter(source, plan.root());
-                case "jdbc" -> new JdbcSourceAdapter(source);
-                default -> throw new IllegalStateException("未验证的 SourceAdapter：" + source.getAdapter());
-            };
+            SourceAdapter adapter = SOURCE_ADAPTERS.create(source, plan.root());
             adapters.put(source.getSourceId(), adapter);
         }
 
@@ -122,7 +116,7 @@ final class SyncRuntimeAssembler {
         MappingCatalog catalog = new PoiMappingRegistry().load(
                 plan.root().resolve("mapping/字段映射.xlsx"), schema);
         DefaultMappingEngine mapping = new DefaultMappingEngine(catalog,
-                new DeterministicIdentityResolver(IDENTITY_NAMESPACE));
+                new DeterministicIdentityResolver(ProjectConstants.IDENTITY_NAMESPACE));
         Neo4jGraphStore store = new Neo4jGraphStore(driver, neo4j, schema);
         store.initializeSchema();
         DefaultSyncService syncService = new DefaultSyncService(adapters, mapping, store);

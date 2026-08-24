@@ -12,16 +12,11 @@ import java.util.Map;
 
 /** Minimal parser for the deliberately small, stable review/queries.yaml schema. */
 final class ReviewQueryCatalog {
-    private final String defaultProjectId;
     private final Map<String, ReviewQueryTemplate> templates;
     private final String sourceText;
 
-    private ReviewQueryCatalog(String defaultProjectId, Map<String, ReviewQueryTemplate> templates, String sourceText) {
-        if (defaultProjectId == null || defaultProjectId.isBlank()) {
-            throw new IllegalArgumentException("queries.yaml 缺少 default_project_id");
-        }
+    private ReviewQueryCatalog(Map<String, ReviewQueryTemplate> templates, String sourceText) {
         if (templates.isEmpty()) throw new IllegalArgumentException("queries.yaml 没有查询模板");
-        this.defaultProjectId = defaultProjectId;
         this.templates = Collections.unmodifiableMap(new LinkedHashMap<>(templates));
         this.sourceText = sourceText;
     }
@@ -35,16 +30,11 @@ final class ReviewQueryCatalog {
     }
 
     private static ReviewQueryCatalog parse(String source) {
-        String projectId = null;
         Map<String, ReviewQueryTemplate> templates = new LinkedHashMap<>();
         Builder current = null;
         boolean inTemplates = false;
         boolean inCypher = false;
         for (String line : source.split("\\R", -1)) {
-            if (!inTemplates && line.startsWith("default_project_id:")) {
-                projectId = scalar(line);
-                continue;
-            }
             if (line.equals("templates:")) {
                 inTemplates = true;
                 continue;
@@ -78,10 +68,9 @@ final class ReviewQueryCatalog {
             }
         }
         if (current != null) templates.put(current.name, current.build());
-        return new ReviewQueryCatalog(projectId, templates, source);
+        return new ReviewQueryCatalog(templates, source);
     }
 
-    String defaultProjectId() { return defaultProjectId; }
     Map<String, ReviewQueryTemplate> templates() { return templates; }
     String sourceText() { return sourceText; }
 
