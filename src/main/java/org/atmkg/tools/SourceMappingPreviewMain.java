@@ -25,6 +25,8 @@ import org.atmkg.infra.source.excel.ExcelSourceAdapter;
  *
  * <p>只有抽样输出或预览工具支持范围经确认变化时才写 Java。无参数使用 sources.local + fixture mapping，
  * 不能据此宣称正式 mapping 正确；本工具只创建 ExcelSourceAdapter，不预览 JDBC，也绝不写 GraphStore。
+ * sampleLimit 只限制最终打印数量；实现会读取整个目标 Excel 入口并保留全部 MappingResult，再汇总 UID，
+ * 不要用它做超大正式数据源性能测试。
  */
 public final class SourceMappingPreviewMain {
     private SourceMappingPreviewMain() {}

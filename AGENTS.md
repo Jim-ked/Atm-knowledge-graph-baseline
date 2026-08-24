@@ -1,19 +1,23 @@
 # AGENTS.md
 
-- 新工程从零开发，不复制 NASR、ERA、旧 ATMONTO、旧 Neo4j import 或旧 Viewer 实现代码。
-- 当前唯一现行本体：`ontology/atm_knowledge_graph.ttl`；禁止运行时多版本本体并存或切换，历史变化由 Git 保存。
-- 本体可以后续增删改；普通类、属性、关系变化由本体 + 人工映射吸收，Java Core 不硬编码航空字段或表名语义。
-- 当前不进行关系挖掘或重新构建本体。
-- `SourceAdapter` 只负责物理数据读取；`MappingEngine` 负责映射执行；`GraphStore` 是 Neo4j 写入边界；`QueryService` 只输出 GraphDTO。
-- 源数据是权威事实，Neo4j 是知识图谱投影；增量事件后必须回读权威源记录。重新同步后不得保留已经失效的旧属性或旧关系。
-- UID 必须由稳定业务键确定；重复全量/增量同步必须幂等，不得生成重复节点和关系。
-- 全量和补偿读取必须允许迭代/批处理，不得把规模设计建立在一次性 `List` 全量加载上。
-- 调用端技术栈未知，不得绑定 Vue/React/特定业务界面；客户端不得直接依赖 Neo4j 内部 ID 或业务 Cypher。
-- 完整 K 跳/子图查询不得静默抽样、top-N 或 LIMIT 截断；返回节点之间的原图关系必须完整。超限显式失败或要求增加约束。
-- G6、Cytoscape.js、Sigma.js + Graphology 只作为可替换 Viewer 候选；公平比较必须使用同一 GraphDTO 和同一测试数据。
-- 测试数据参考 ATMONTO/ATMGRAPH 的模拟数据生成方式，但必须从结构化源数据经过本项目 Mapping 主链构图，不得用 ATMONTO TTL 直接导入 Neo4j。
-- 正式目标环境为银河麒麟 V4.0.2 x86_64；系统 Java 8 不动，优先私有 JDK 17 + Neo4j 5.26 LTS，实机失败后才降级。
-- 源码、开发资源、部署产物分离；不把 JDK、Neo4j、Protégé、Maven 仓、候选依赖资源或部署包提交到本仓库。
-- 可替换叶子依赖按主选 + 备选资源准备；代码只实现当前主选，不维护双业务实现。
-- Java 是正式运行时唯一语义核心；Python 只允许用于外围准备、测试数据生成、实验或分析，不得形成第二套 Mapping/UID/关系语义实现。
-- 首期不引入 Kafka、Debezium、完整 CDC 平台、LLM 或推理框架作为基础闭环依赖。
+- 当前唯一正式本体是 `ontology/atm_knowledge_graph.ttl`。历史变化由 Git 保存，不建立运行时多版本本体切换。
+- 普通类、属性和关系变化优先由 TTL + `mapping/字段映射.xlsx` 吸收；Java 通用主链不得硬编码机场、空域、航路、航班等具体字段判断。
+- `SourceAdapter` 只负责物理读取；`MappingEngine` 负责语义映射执行；`GraphStore` 负责图投影；`QueryService` 只读取图事实并返回 GraphDTO。
+- 源数据是权威事实，Neo4j 是可重建投影。ChangeEvent 只携带源记录身份，增量更新必须回读权威源记录后重新映射。
+- 稳定 UID 必须来自类语义 + 稳定业务键。不得使用文件名、路径、Sheet、表名或 Neo4j internal id 作为外部实体身份。
+- 同一实体允许多 source contribution；`KGEntityContribution` 是内部技术节点，不得暴露到 Query/GraphDTO/Viewer。属性冲突必须显式失败，不允许后写覆盖前写。
+- 多来源关系 contribution 当前未实现，不要假设与实体 contribution 等价。
+- 全量/补偿读取必须允许流式/迭代处理，不应建立在一次性 List 全量加载上。人工 Preview 工具例外，它们不是生产大数据读取路径。
+- `fullRebuild` 是显式危险操作，服务启动不得自动 clearProject/fullRebuild。
+- JDBC polling 当前只覆盖 `watermark > ?` 的 UPSERT 发现；hard DELETE、watermark 持久化、同时间戳晚到处理均属于已知边界。
+- 查询不得随机抽样、top-N 或静默 LIMIT。完整 K-hop 返回约束范围内到达节点以及这些节点之间原图已有的完整关系。
+- QueryService 不负责空间/业务计算。缺失的 `RouteSegment ↔ Airspace` 等派生事实必须由独立计算模块形成后再写入图。
+- `queries/query-templates.yaml` 只允许受控 QuerySpec 模板，不接受 raw Cypher。
+- `queries/change-query-rules.yaml` 当前只用于 association 组件；`KgServiceMain/SyncRuntime` 尚未正式装配 GraphChangeAssociationProjector，也没有 outward sink。
+- 正式 Viewer 只保留 G6。不要重新加入 Sigma/Cytoscape/Graphology 运行实现，也不要让 Viewer 反向改变 GraphDTO/API。
+- 当前最终业务 UI 技术栈未知，不得绑定 Vue/React 或特定页面框架。
+- Java 是正式运行时唯一语义核心。Python 只允许外围准备、实验和测试数据生成。
+- 首期不引入 Kafka、Debezium、GDS、n10s、LLM、JTS/GeoTools 等作为基础闭环硬依赖；真实需求出现后再扩展。
+- 目标环境仍考虑银河麒麟 V4.0.2 x86_64；系统 Java 8 不替换，优先私有 JDK 17 + Neo4j 5.26 LTS。
+- 源码、开发资源、部署介质分离；不把 JDK、Neo4j、Maven 仓、Protégé、离线安装包或部署包提交到源码仓。
+- 普通开发操作优先遵循 `tools/START_HERE.txt`。如果注释、旧阶段文档和当前代码冲突，以当前代码与已确认基线为准，并修正文档，不为兼容旧说明修改代码。

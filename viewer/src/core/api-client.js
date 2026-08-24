@@ -1,3 +1,5 @@
+// 服务端 basePath/maxDepth 在 config/api.yaml；当前 Viewer 默认仍使用 /api/v1 和 depth 1..8。
+// 修改服务端配置不会自动同步这里；需要同步 Viewer 时一并修改并运行 npm test/build。
 export class ApiClient {
   constructor(basePath = '/api/v1') {
     this.basePath = basePath.replace(/\/$/, '');

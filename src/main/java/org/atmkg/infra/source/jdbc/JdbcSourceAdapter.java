@@ -26,7 +26,7 @@ import org.atmkg.core.spi.SourceAdapter;
 import org.atmkg.infra.source.config.ConfiguredSource;
 
 /**
- * 新增 MySQL 表/view 不改本类：在 {@code config/sources.yaml} 的 jdbc source.objects 下增加 object，
+ * 新增 JDBC 表/view 不改本类：在 {@code config/sources.yaml} 的 jdbc source.objects 下增加 object，
  * 填 table 或 view（二选一）、keyFields 和可选 watermarkField；账号名/密码通过 usernameEnv/passwordEnv
  * 指向环境变量。新增业务字段再去 {@code mapping/字段映射.xlsx}。
  *
@@ -129,7 +129,6 @@ public final class JdbcSourceAdapter implements SourceAdapter {
             properties.setProperty("user", username);
             properties.setProperty("password", password);
             connection = DriverManager.getConnection(url, properties);
-            connection.setReadOnly(true);
             statement = connection.prepareStatement(sql);
             statement.setFetchSize(fetchSize);
             if (maxRows > 0) statement.setMaxRows(maxRows);

@@ -38,22 +38,25 @@ sources: []
 # ADJACENT_NEXT 会把当前行字段保留在顶层，同时提供 current.<字段> 与 next.<字段>；
 # 最后一行没有 next 时不产生记录。Adapter 还会加入 __sourceKey 供确需复合业务键的映射使用。
 #
-# JDBC 示例（当前仍是注释）。新增表时通常只在同一个 jdbc-main 的 objects 下追加 object；
-# 不要为同一数据库每张表复制 driver/url/账号环境变量：
+# Oracle JDBC 示例（当前仍是注释）。Adapter 仍是通用 jdbc；新增表时通常只在同一个 jdbc-main
+# 的 objects 下追加 object，不要为同一数据库每张表复制 driver/url/账号环境变量：
 # sources:
-#   - sourceId: jdbc-main            # mapping 的 sourceId 列写 jdbc-main
-#     adapter: jdbc                  # 固定写 jdbc；不要写 mysql
-#     driver: com.mysql.cj.jdbc.Driver
-#     url: jdbc:mysql://db-host:3306/atm?useUnicode=true&characterEncoding=UTF-8&useCursorFetch=true
+#   - sourceId: jdbc-main             # 稳定技术标识；不要写 oracle；mapping 写同一值
+#     adapter: jdbc                   # 固定写 jdbc
+#     driver: oracle.jdbc.OracleDriver
+#     url: jdbc:oracle:thin:@//DB_HOST:1521/SERVICE_NAME
 #     usernameEnv: ATMKG_JDBC_USERNAME # 值是环境变量名，不是用户名
 #     passwordEnv: ATMKG_JDBC_PASSWORD # 值是环境变量名，不是密码
-#     fetchSize: 500                 # 可选，默认 500
+#     fetchSize: 500                  # 可选，默认 500
 #     objects:
-#       route-row:                    # sourceObject；mapping 和 sync polling scope 引用这个键
-#         table: atm_route_rows       # 与 view 二选一；视图写 view: current_route_rows
-#         keyFields: [route_id, sequence_no] # 稳定、非空、唯一业务键列
-#         watermarkField: updated_at  # 可选时间列；配置后才可 scanChangedSince/polling
+#       example-object:                # sourceObject；mapping 和 polling scope 引用这个键
+#         table: SCHEMA.TABLE_NAME     # 与 view 二选一；视图改写为 view: SCHEMA.VIEW_NAME
+#         keyFields: [ID]              # 与 ResultSet columnLabel 一致的稳定非空唯一业务键
+#         watermarkField: UPDATED_AT   # 可选 DATE/TIMESTAMP 列；配置后才可增量扫描/polling
 #
 # JDBC 只允许读取受控配置中的简单表/视图和字段标识符，不接受运行时 SQL。
+# 密码只通过 passwordEnv 指向的环境变量提供，不进入 YAML。mapping 的 sourceId/sourceObject
+# 必须与这里逐字一致。以后更换其他 JDBC 数据库时，原则上只替换 runtime driver、URL 和源对象配置，
+# 不要求修改 Core 或把数据库厂商判断加入业务边界。
 # CSV / JSON 后续仍沿用同一 sourceId + objectName + sourceKey 边界；
 # 不在 Java Core 中加入任何数据库厂商或航空字段判断。

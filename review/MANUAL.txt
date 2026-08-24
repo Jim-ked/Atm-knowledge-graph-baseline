@@ -1,35 +1,101 @@
-每日开发启动
+航管知识图谱人工检查说明
+==========================
 
-1. 进入项目目录。
-2. 设置 ATMKG_NEO4J_URI、ATMKG_NEO4J_DATABASE、ATMKG_NEO4J_USERNAME、ATMKG_NEO4J_PASSWORD。
-3. Maven 不在 PATH 时设置 MAVEN_HOME。
-4. 执行 tools\neo4j-dev.cmd start。
-5. 执行 tools\service.cmd，并保持该前台窗口开启，不要关闭或按 Ctrl+C。
-6. 打开 http://127.0.0.1:18080/viewer/。
+本文件只讲“已经启动/已经同步后怎么检查”。第一次接手、接 Excel/JDBC、改字段、本体、polling、fullRebuild 等开发操作请先看：
 
-Review CLI
+  tools\START_HERE.txt
 
-Set ATMKG_NEO4J_URI, ATMKG_NEO4J_DATABASE, ATMKG_NEO4J_USERNAME and
-ATMKG_NEO4J_PASSWORD, then run tools\review.cmd (Windows) or tools/review.sh (Linux).
-If Maven is not on PATH, set MAVEN_HOME. The tool reads review/queries.yaml itself.
+一、启动前
+----------
 
-Minimal Browser fallback
+在同一命令行设置：
 
-Open the configured Neo4j Browser and run ordinary Cypher directly, for example:
+  ATMKG_NEO4J_URI
+  ATMKG_NEO4J_DATABASE
+  ATMKG_NEO4J_USERNAME
+  ATMKG_NEO4J_PASSWORD
 
-MATCH (n:KGEntity {kg_project: 'atm-knowledge-graph', kg_source_key: 'YOUR_SOURCE_KEY'})
-OPTIONAL MATCH (n)-[r]-(m:KGEntity {kg_project: 'atm-knowledge-graph'})
-WHERE r IS NULL OR r.kg_project = 'atm-knowledge-graph'
-RETURN n, r, m;
+Maven 不在 PATH 时设置 MAVEN_HOME。
 
-Neo4j control fallback: enter NEO4J_HOME\bin and run neo4j.bat console on Windows,
-or enter NEO4J_HOME/bin and run ./neo4j console on Linux.
+二、Review CLI
+--------------
 
-HTTP service
+Windows：
 
-Set the same four ATMKG_NEO4J_* variables, then run tools\service.cmd or
-tools/service.sh. If Maven is not on PATH, set MAVEN_HOME. Open
-http://127.0.0.1:18080/api/v1/health in a browser, or use:
+  tools\review.cmd
 
-curl http://127.0.0.1:18080/api/v1/health
-curl -H "Content-Type: application/json" -d "{\"uid\":\"YOUR_KG_UID\"}" http://127.0.0.1:18080/api/v1/graph/one-hop
+Linux：
+
+  tools/review.sh
+
+ReviewTool 是只读检查入口，不依赖 sources.yaml，不修改 Neo4j。可用于：
+
+  1. 按 UID 查实体
+  2. 完整一跳
+  3. K 跳
+  4. 两实体最短路径
+  5. 按关系类型
+  6. 按实体类型
+  7. 重复 UID
+  8. 图总体情况
+
+每次查询同时提供参数化 Cypher 和 Browser 可直接执行版本，便于人工复核。
+
+三、服务/API
+------------
+
+启动：
+
+  tools\service.cmd
+
+默认健康检查：
+
+  curl http://127.0.0.1:18080/api/v1/health
+
+Viewer：
+
+  http://127.0.0.1:18080/viewer/
+
+常用 API：
+
+  GET  /api/v1/entities/{uid}
+  POST /api/v1/graph/one-hop
+  POST /api/v1/graph/k-hop
+  POST /api/v1/graph/path
+  POST /api/v1/graph/query
+
+NAMED query 当前没有直接 HTTP 入口。
+
+四、人工同步后的最短检查链
+--------------------------
+
+执行 tools\sync.cmd 后，建议按下面顺序检查：
+
+  1. ReviewTool 按 UID 查目标实体；
+  2. 完整一跳确认关系方向和端点；
+  3. 必要时按关系类型/实体类型看整体；
+  4. 再通过 API 查询同一 UID；
+  5. API GraphDTO 正确后再看 Viewer。
+
+如果 ReviewTool 正确但 API 错，优先查 QueryService/API；如果 API GraphDTO 正确但 Viewer 错，才查 Viewer。不要为了页面显示问题去修改 TTL、MappingEngine 或 GraphStore。
+
+五、Browser fallback
+--------------------
+
+需要直接看图时，可在已配置的 Neo4j Browser 执行普通 Cypher。示例：
+
+  MATCH (n:KGEntity {kg_project: 'atm-knowledge-graph', kg_source_key: 'YOUR_SOURCE_KEY'})
+  OPTIONAL MATCH (n)-[r]-(m:KGEntity {kg_project: 'atm-knowledge-graph'})
+  WHERE r IS NULL OR r.kg_project = 'atm-knowledge-graph'
+  RETURN n, r, m;
+
+Browser 只作为人工检查工具，不是正式应用入口。
+
+六、注意
+--------
+
+  - KGEntityContribution 是内部技术节点，不应作为业务节点解读；
+  - 查询和 Viewer 都应使用稳定 kg_uid，不依赖 Neo4j internal id；
+  - change-query-rules 当前尚未正式接入 service runtime；
+  - RouteSegment-Airspace 空间拓扑尚未实现；
+  - hard DELETE、persistent watermark 等边界见 tools\START_HERE.txt。

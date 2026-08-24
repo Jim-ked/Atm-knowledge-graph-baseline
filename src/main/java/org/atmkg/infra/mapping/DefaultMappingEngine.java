@@ -26,7 +26,11 @@ import org.atmkg.core.spi.MappingEngine;
  *
  * <p>只有所有实体共用的字段路径读取、trim/upper/lower/integer/long/decimal/boolean 转换或 MappingResult
  * 生成规则确需变化才写 Java。加入 Airport/Airspace/Flight if 会把 workbook 语义硬编码进 Core 主链。
- * 映射失败先用 source-preview 确认字段，再查工作簿 sourceId/sourceObject/businessKey/locator；不要从查询结果补端点。
+ * 实体/属性 mapping 按 {@code record.sourceId + record.objectName} 选择；关系 mapping 当前按
+ * {@code record.sourceId} 取该 sourceId 下全部关系行，再对每行读取 locator，任一端为空就跳过。
+ * 因此同一 sourceId 下多个 object 只要出现相同 locator 字段，可能尝试同一关系；新增 sourceObject
+ * 过滤需改 workbook/Core 契约，本轮不要做。映射失败先用 Excel preview 或 JDBC sync/resync 确认字段，
+ * 再查工作簿 businessKey/locator；不要从查询结果补端点。
  */
 public final class DefaultMappingEngine implements MappingEngine {
     private final MappingCatalog catalog;

@@ -27,13 +27,16 @@ import org.atmkg.core.model.mapping.RelationshipMappingSpec;
 import org.atmkg.core.spi.MappingRegistry;
 
 /**
- * 新增普通 mapping 只编辑 {@code mapping/字段映射.xlsx}，不要修改本类。实体映射必须填写 sourceId、
- * sourceObject、业务主键、UID规则；属性映射填写 sourceId/源对象/源字段路径；关系映射填写两端 locator。
+ * 新增普通 mapping 只编辑 {@code mapping/字段映射.xlsx}，不要修改本类。实体映射、属性映射按
+ * {@code sourceId + sourceObject} 选择：实体行填写 sourceId、sourceObject、业务主键、UID规则，
+ * 属性行填写 sourceId、源对象、源字段/路径；关系映射当前只填写 sourceId 和两端 locator，没有
+ * sourceObject 列。
  * IRI 必须存在于 {@code ontology/atm_knowledge_graph.ttl}。
  *
  * <p>只有三张 Sheet 的正式列结构或跨所有 mapping 的校验规则经批准变化才写 Java。放宽未知 IRI、
  * domain/range、端点身份或 UID规则兼容校验会让错误图进入 Neo4j。加载失败先按错误行查 TTL 和工作簿；
- * [待映射] 只是待人工填写，不是已激活映射。
+ * [待映射] 只是待人工填写，不是已激活映射。关系没有 sourceObject 过滤时，不能靠本类误加列解决；
+ * 先按 sourceId 检查该关系会被哪些 SourceRecord 尝试。
  */
 public final class PoiMappingRegistry implements MappingRegistry {
     public static final String PENDING = "[待映射]";

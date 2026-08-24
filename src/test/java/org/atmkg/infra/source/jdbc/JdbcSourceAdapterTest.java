@@ -2,6 +2,7 @@ package org.atmkg.infra.source.jdbc;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -20,6 +21,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.logging.Logger;
@@ -34,6 +36,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class JdbcSourceAdapterTest {
     private static final FakeDriver DRIVER = new FakeDriver();
@@ -55,6 +59,26 @@ class JdbcSourceAdapterTest {
     @AfterEach
     void resetDriver() {
         DRIVER.executions.clear();
+        DRIVER.rejectSetReadOnly = false;
+        DRIVER.watermarkJdbcType = Types.TIMESTAMP;
+    }
+
+    @Test
+    void readsWithoutCallingSetReadOnlyWhenDriverRejectsIt() throws Exception {
+        DRIVER.rejectSetReadOnly = true;
+        JdbcSourceAdapter adapter = adapter("""
+                objects:
+                  route-row:
+                    table: ATM_SCHEMA.ROUTE_ROWS
+                    keyFields: [route_id, sequence_no]
+                    watermarkField: modified_at
+                """);
+
+        List<SourceRecord> records = list(adapter.readAll("route-row"));
+
+        assertEquals(2, records.size());
+        assertEquals("SELECT * FROM ATM_SCHEMA.ROUTE_ROWS ORDER BY route_id, sequence_no",
+                DRIVER.executions.get(0).sql());
     }
 
     @Test
@@ -71,11 +95,13 @@ class JdbcSourceAdapterTest {
 
         assertEquals(List.of("R\\|1|2", "R\\\\2|3"),
                 records.stream().map(SourceRecord::getSourceKey).toList());
-        assertEquals("alpha", records.get(0).getFields().get("caption"));
+        assertEquals("alpha", records.get(0).getFields().get("MixedCaseCaption"));
+        assertFalse(records.get(0).getFields().containsKey("mixedcasecaption"));
         assertEquals("R\\|1|2", records.get(0).getFields().get("__sourceKey"));
         assertEquals(FIRST_CHANGED, records.get(0).getSourceTimestamp());
         Execution execution = DRIVER.executions.get(0);
         assertEquals("SELECT * FROM route_rows ORDER BY route_id, sequence_no", execution.sql());
+        assertVendorNeutral(execution.sql());
         assertEquals("reader", execution.properties().getProperty("user"));
         assertEquals("secret", execution.properties().getProperty("password"));
     }
@@ -93,16 +119,38 @@ class JdbcSourceAdapterTest {
         SourceRecord selected = adapter.readByKey("route-row", "R\\|1|2").orElseThrow();
         List<SourceRecord> changed = list(adapter.scanChangedSince("route-row", FIRST_CHANGED));
 
-        assertEquals("alpha", selected.getFields().get("caption"));
+        assertEquals("alpha", selected.getFields().get("MixedCaseCaption"));
         assertEquals(List.of("R\\\\2|3"), changed.stream().map(SourceRecord::getSourceKey).toList());
         Execution byKey = DRIVER.executions.get(0);
         assertEquals("SELECT * FROM current_route_rows WHERE route_id = ? AND sequence_no = ?", byKey.sql());
+        assertVendorNeutral(byKey.sql());
         assertEquals(List.of("R|1", "2"), byKey.parameters());
         assertFalse(byKey.sql().contains("R|1"));
         Execution scan = DRIVER.executions.get(1);
         assertEquals("SELECT * FROM current_route_rows WHERE modified_at > ? ORDER BY route_id, sequence_no",
                 scan.sql());
+        assertVendorNeutral(scan.sql());
         assertEquals(List.of(Timestamp.from(FIRST_CHANGED)), scan.parameters());
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {Types.DATE, Types.TIMESTAMP})
+    void bindsDateAndTimestampWatermarksAsPreparedStatementTimestamps(int watermarkJdbcType) throws Exception {
+        DRIVER.watermarkJdbcType = watermarkJdbcType;
+        JdbcSourceAdapter adapter = adapter("""
+                objects:
+                  route-row:
+                    table: ATM_SCHEMA.ROUTE_ROWS
+                    keyFields: [route_id, sequence_no]
+                    watermarkField: modified_at
+                """);
+
+        list(adapter.scanChangedSince("route-row", FIRST_CHANGED));
+
+        Execution execution = DRIVER.executions.get(0);
+        assertInstanceOf(Timestamp.class, execution.parameters().get(0));
+        assertEquals(Timestamp.from(FIRST_CHANGED), execution.parameters().get(0));
+        assertVendorNeutral(execution.sql());
     }
 
     @Test
@@ -158,10 +206,20 @@ class JdbcSourceAdapterTest {
         return records;
     }
 
+    private static void assertVendorNeutral(String sql) {
+        String normalized = sql.toUpperCase(Locale.ROOT);
+        assertFalse(normalized.matches("(?s).*\\b(LIMIT|TOP|ROWNUM|NVL|DUAL)\\b.*"));
+        assertFalse(normalized.contains("FETCH FIRST"));
+        assertFalse(normalized.contains("/*+"));
+        assertFalse(sql.contains("`"));
+    }
+
     private record Execution(String sql, List<Object> parameters, Properties properties) {}
 
     public static final class FakeDriver implements Driver {
         private final List<Execution> executions = new ArrayList<>();
+        private boolean rejectSetReadOnly;
+        private int watermarkJdbcType = Types.TIMESTAMP;
 
         @Override
         public Connection connect(String url, Properties info) {
@@ -182,7 +240,11 @@ class JdbcSourceAdapterTest {
             return (Connection) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{Connection.class},
                     (proxy, method, args) -> switch (method.getName()) {
                         case "prepareStatement" -> statement((String) args[0], properties);
-                        case "close", "setReadOnly" -> null;
+                        case "setReadOnly" -> {
+                            if (rejectSetReadOnly) throw new SQLException("setReadOnly is not supported");
+                            yield null;
+                        }
+                        case "close" -> null;
                         case "isClosed" -> false;
                         default -> defaultValue(method.getReturnType());
                     });
@@ -212,21 +274,22 @@ class JdbcSourceAdapterTest {
 
         private CachedRowSet rows(String sql, List<Object> parameters) throws SQLException {
             List<List<Object>> data = List.of(
-                    List.of("R|1", 2, "alpha", Timestamp.from(FIRST_CHANGED)),
-                    List.of("R\\2", 3, "bravo", Timestamp.from(SECOND_CHANGED)));
+                    List.of("R|1", 2, "alpha", watermarkValue(FIRST_CHANGED)),
+                    List.of("R\\2", 3, "bravo", watermarkValue(SECOND_CHANGED)));
             if (sql.contains("route_id = ?")) {
                 data = data.stream().filter(row -> row.get(0).equals(parameters.get(0))
                         && String.valueOf(row.get(1)).equals(parameters.get(1))).toList();
             } else if (sql.contains("modified_at > ?")) {
                 Timestamp since = (Timestamp) parameters.get(0);
-                data = data.stream().filter(row -> ((Timestamp) row.get(3)).after(since)).toList();
+                data = data.stream().filter(row -> ((java.util.Date) row.get(3)).getTime() > since.getTime()).toList();
             }
             RowSetMetaDataImpl metadata = new RowSetMetaDataImpl();
             metadata.setColumnCount(4);
             metadata.setColumnName(1, "route_id"); metadata.setColumnType(1, Types.VARCHAR);
-            metadata.setColumnName(2, "sequence_no"); metadata.setColumnType(2, Types.INTEGER);
-            metadata.setColumnName(3, "caption"); metadata.setColumnType(3, Types.VARCHAR);
-            metadata.setColumnName(4, "modified_at"); metadata.setColumnType(4, Types.TIMESTAMP);
+            metadata.setColumnName(2, "sequence_no"); metadata.setColumnType(2, Types.NUMERIC);
+            metadata.setColumnName(3, "MixedCaseCaption"); metadata.setColumnLabel(3, "MixedCaseCaption");
+            metadata.setColumnType(3, Types.VARCHAR);
+            metadata.setColumnName(4, "modified_at"); metadata.setColumnType(4, watermarkJdbcType);
             CachedRowSet rowSet = RowSetProvider.newFactory().createCachedRowSet();
             rowSet.setMetaData(metadata);
             for (int rowIndex = data.size() - 1; rowIndex >= 0; rowIndex--) {
@@ -238,6 +301,13 @@ class JdbcSourceAdapterTest {
             }
             rowSet.beforeFirst();
             return rowSet;
+        }
+
+        private Object watermarkValue(Instant value) {
+            if (watermarkJdbcType == Types.DATE) {
+                return new java.sql.Date(Timestamp.from(value).getTime());
+            }
+            return Timestamp.from(value);
         }
 
         private static Properties copy(Properties source) {

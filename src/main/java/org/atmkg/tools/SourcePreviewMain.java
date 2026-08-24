@@ -22,6 +22,8 @@ import org.atmkg.infra.source.excel.ExcelSourceAdapter;
  *
  * <p>只有人工输出格式或支持哪个既有 Adapter 的工具范围经确认变化时才改 Java。它只看 SourceRecord，
  * 不判断 mapping，也不写 Neo4j；字段已读到但图中没有应继续查字段映射.xlsx。当前不支持 JDBC 预览。
+ * limit 只限制打印前几条；实现会先读取整个目标 Excel 入口并保留记录列表，不要用它做超大正式数据源
+ * 的性能测试。
  */
 public final class SourcePreviewMain {
     private SourcePreviewMain() {}

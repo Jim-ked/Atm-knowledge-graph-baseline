@@ -141,34 +141,36 @@ keyFields 只决定 SourceRecord.sourceKey；最终实体 UID 由字段映射.xl
 SourceRecord 正确后，再编辑 mapping\字段映射.xlsx；不要在 ExcelSourceAdapter 中写 Route/Airspace if。
 
 
-任务 2：我要增加一个 MySQL/JDBC 表或 view
-=========================================
+任务 2：我要增加一个 Oracle/JDBC 表或 view
+========================================
 
 仍然只改 config\sources.yaml。在 sources 数组下复制下面的完整 source 块：
 
   - sourceId: jdbc-main
     adapter: jdbc
-    driver: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://db-host:3306/atm?useUnicode=true&characterEncoding=UTF-8&useCursorFetch=true
+    driver: oracle.jdbc.OracleDriver
+    url: jdbc:oracle:thin:@//DB_HOST:1521/SERVICE_NAME
     usernameEnv: ATMKG_JDBC_USERNAME
     passwordEnv: ATMKG_JDBC_PASSWORD
     fetchSize: 500
     objects:
-      route-row:
-        table: atm_route_rows
-        keyFields: [route_id, sequence_no]
-        watermarkField: updated_at
+      example-object:
+        table: SCHEMA.TABLE_NAME
+        keyFields: [ID]
+        watermarkField: UPDATED_AT
 
 DBA 必须提供并逐项确认：
 
-  driver          JDBC driver 类；当前 pom.xml 已带 MySQL Connector/J runtime。
-  url             主机、端口、database/schema；不要把密码拼进 URL。
+  sourceId        稳定技术标识；这里仍写 jdbc-main，不写 oracle；mapping 必须逐字一致。
+  adapter         固定写 jdbc；当前是通用 JDBC Adapter，不是 Oracle 专用 Adapter。
+  driver          JDBC driver 类；当前 pom.xml 已带 ojdbc17 runtime Thin Driver。
+  url             Oracle HOST、PORT、SERVICE_NAME；不要把账号或密码拼进 URL。
   usernameEnv     存放只读用户名的环境变量名，例如 ATMKG_JDBC_USERNAME。
   passwordEnv     存放密码的环境变量名，例如 ATMKG_JDBC_PASSWORD。
   fetchSize       流式批读取提示，默认 500。
-  route-row       sourceObject；mapping 用这个值，不是数据库表名。
-  table / view    二选一。若读视图，删除 table 行并写 view: current_route_rows。
-  keyFields       结果中稳定、非空且唯一的业务键列；不能依赖数据库行号。
+  example-object  sourceObject；mapping 用这个值，不是数据库表名。
+  table / view    二选一。若读视图，删除 table 行并写 view: SCHEMA.VIEW_NAME。
+  keyFields       与 ResultSet columnLabel 精确一致的稳定、非空且唯一业务键列；不会自动改大小写。
   watermarkField  可选时间列；只有配置它才能 scanChangedSince/polling。
 
 启动前设置环境变量：
@@ -177,19 +179,21 @@ DBA 必须提供并逐项确认：
   set "ATMKG_JDBC_PASSWORD=<密码>"
 
 账号只需要 SELECT。不要授予 CREATE/UPDATE/DELETE/ALTER/DROP；项目不会给源库建表或建索引。
-watermarkField 最好有数据库索引。当前 SQL 是 WHERE updated_at > ?，通过 setTimestamp 绑定，
-ResultSet.getTimestamp 转 Instant；列类型必须能稳定进行 JDBC Timestamp 比较。
+watermarkField 最好有数据库索引。当前 SQL 是 WHERE UPDATED_AT > ?，通过 setTimestamp 绑定，
+ResultSet.getTimestamp 转 Instant；Oracle DATE/TIMESTAMP 列必须能稳定进行 JDBC Timestamp 比较。
+NUMBER/VARCHAR2/DATE/TIMESTAMP 均通过 JDBC 通用 ResultSet 读取，不进入 Core 类型体系。
 
 当前没有 JDBC source-preview。先运行：
 
   mvn.cmd -Dtest=JdbcSourceAdapterTest test
   tools\sync.cmd
 
-在 sync 菜单选“查看当前同步配置”，正常应出现 jdbc-main / route-row / jdbc /
+在 sync 菜单选“查看当前同步配置”，正常应出现 jdbc-main / example-object / jdbc /
 watermark=是。然后先选“重新同步一条记录”，输入按 keyFields 顺序形成的 sourceKey。
 
 连接失败先查 driver/url/环境变量/SELECT 权限；缺列查 table/view 实际结果。新增表不要改
 JdbcSourceAdapter，只有通用 JDBC 标识符、游标、PreparedStatement 读取机制变化才进该类。
+以后更换其他 JDBC 数据库时，原则上只替换 runtime driver、URL 和源对象配置，不修改 Core。
 
 
 任务 3：我要把源里的一个字段写入现有实体
@@ -228,6 +232,11 @@ urn:atm-knowledge-graph:routeName。
 失败：SourceRecord 没字段回任务 1/2；有字段但 MappingResult 没属性，核对 sourceId、源对象、
 源字段/路径和是否必填。不要修改 DefaultMappingEngine、Neo4jGraphStore 或 QueryService。
 
+如果这个 sourceObject 是 JDBC，不执行上面的两个 Excel preview：当前没有 JDBC preview，JdbcSourceAdapter
+单元测试不代表真实数据库连通。改为核对 config\sources.yaml 的 driver/url/table-or-view/keyFields、
+usernameEnv/passwordEnv 对应环境变量和 SELECT 权限，然后 tools\sync.cmd → 3. 重新同步一条记录，
+最后 tools\review.cmd 验证图。
+
 
 任务 4：我要新增一种实体
 ========================
@@ -246,13 +255,15 @@ urn:atm-knowledge-graph:routeName。
      UID规则                class-local-business-key
 
 4. 在“属性映射”Sheet 至少映射业务键和需要的显示属性。
-5. 执行：
+5. 如果实体来自 Excel：
 
-     mvn.cmd test
      tools\source-preview.cmd config\sources.yaml <sourceId> <sourceObject> 5
      tools\source-mapping-preview.cmd config\sources.yaml mapping\字段映射.xlsx 3
 
-6. 先 resync 一条，再按需要 fullSync 一个入口。
+   如果实体来自 JDBC：当前没有 JDBC preview；单元测试不代表真实 DB 连通。核对 sources.yaml/env/SELECT
+   权限，执行 tools\sync.cmd → 3. 重新同步一条记录，再执行 tools\review.cmd。
+
+6. 两种来源都执行 mvn.cmd test；确认单条 resync 正确后，再按需要 fullSync 一个入口。
 
 正常：MappingResult 中 class IRI 正确，同一业务键重复运行得到同一 UID。
 失败：“未知实体类”查 TTL IRI；“业务主键缺失”查 SourceRecord 字段路径；UID 改变查业务键。
@@ -282,6 +293,11 @@ urn:atm-knowledge-graph:routeName。
 
 3. 确认同一 sourceId 下，起点类和终点类都已有“实体映射”行，且同一 class 的多条实体映射使用
    相同 UID规则 class-local-business-key。起终点定位字段可以来自 current.x / next.x。
+   实体映射、属性映射按 sourceId + sourceObject 选择；但当前“关系映射”只有 sourceId，没有
+   sourceObject 列。DefaultMappingEngine 对每条 SourceRecord 会执行该 sourceId 下全部关系映射，
+   是否真的产生关系只由起点/终点 locator 是否读到值决定。
+   因此同一 sourceId 下多个 object 若出现相同 locator 字段名，必须逐个 object 核对，不能误以为
+   关系行只属于其中一个 object。本轮不要给 workbook 增 sourceObject 列，也不要修改 MappingEngine 行为。
 4. 执行：
 
      mvn.cmd test
@@ -471,26 +487,33 @@ tools\sync.cmd 菜单：
 
 按顺序停在第一处异常，不要跳层：
 
-1. 再运行 source-preview，抄下 sourceId、sourceObject、sourceKey 和一个实际字段名。
-2. 打开 mapping\字段映射.xlsx：
+Excel 分支：
+
+1. 运行 source-preview，抄下 sourceId、sourceObject、sourceKey 和一个实际字段名。
+2. 运行 tools\source-mapping-preview.cmd config\sources.yaml mapping\字段映射.xlsx 3。
+   该工具读取整个目标 Excel 入口，再只显示 sample limit 条 MappingResult；不要拿它测试超大文件。
+3. 打开 mapping\字段映射.xlsx：
 
    “实体映射”必须有相同 sourceId + sourceObject；
    “业务主键”必须是刚才 SourceRecord 中真实存在的字段路径；
    “UID规则”使用 class-local-business-key。
 
-3. “属性映射”的 sourceId、源对象、源字段/路径必须逐字匹配。
-4. Excel 执行：
+4. “属性映射”的 sourceId、源对象、源字段/路径必须逐字匹配。
+5. 正常应打印至少一个实体 UID；有关系时端点 UID 也应出现。
+6. 执行 tools\sync.cmd → resync 一条，再执行 tools\review.cmd → 查询实体/图总体情况/重复 UID。
 
-     tools\source-mapping-preview.cmd config\sources.yaml mapping\字段映射.xlsx 3
+JDBC 分支：
 
-   正常应打印至少一个实体 UID；有关系时端点 UID 也应出现。
-5. 执行 tools\sync.cmd → resync 一条。
-6. 执行 tools\review.cmd → 查询实体/图总体情况/重复 UID。
+1. 当前没有 JDBC preview；不要把 source-preview/source-mapping-preview 当成 JDBC 工具。
+2. 核对 config\sources.yaml 的 driver、url、table/view、keyFields、watermarkField，以及
+   usernameEnv/passwordEnv 指向的环境变量和 SELECT 权限。JdbcSourceAdapterTest 只是不连库的边界测试。
+3. 执行 tools\sync.cmd → 3. 重新同步一条记录，输入按 keyFields 生成的 sourceKey。
+4. 执行 tools\review.cmd 验证实体、属性、关系。
 
 定位：
 
-  SourceRecord 不对       → sources.yaml/源文件。
-  MappingResult 为空      → 字段映射.xlsx/TTL。
+  Excel SourceRecord 不对 → sources.yaml/Excel 文件；Excel MappingResult 为空 → 字段映射.xlsx/TTL。
+  JDBC 读取/连接失败      → sources.yaml/env/driver/url/SELECT 权限，不是 preview 工具问题。
   MappingResult 正确但写失败 → Neo4jGraphStore 错误，先看 contribution 冲突或关系端点缺失。
   Review 查不到           → 核对同步所用 project、database 和 sourceKey。
 

@@ -1,13 +1,17 @@
 api:
   host: "127.0.0.1"          # HTTP 绑定地址；环境变量 ATMKG_API_HOST 可覆盖
   port: 18080                # HTTP 端口；环境变量 ATMKG_API_PORT 可覆盖
-  basePath: "/api/v1"        # health 实际为 <basePath>/health；必须以 / 开头
+  basePath: "/api/v1"        # 服务端 health 实际为 <basePath>/health；必须以 / 开头
   schemaVersion: "1"         # 写入 GraphDTO.schemaVersion，不是 TTL 版本
-  maxDepth: 8                # API 接受的 K-hop/path 最大 depth
+  maxDepth: 8                # 服务端 API 接受的 K-hop/path 最大 depth
   maxRequestBytes: 65536     # JSON 请求体字节上限
   maxResultNodes: 10000      # GraphDTO 超过此节点数时显式失败，不截断
   maxResultRelationships: 50000 # GraphDTO 超过此关系数时显式失败，不截断
 
 # 修改后重启 tools\service.cmd，并按新 host/port/basePath 请求：
 # curl http://127.0.0.1:18080/api/v1/health
+# 注意：ApiConfig 会读取 basePath/maxDepth，但 viewer/src/core/api-client.js 当前默认仍固定
+# /api/v1，depth() 仍固定接受 1..8。改这里不会自动修改 Viewer；若继续使用 Viewer：
+# 改 basePath 后检查/修改 api-client.js 默认路径；改 maxDepth 后若希望 Viewer 同步上限，
+# 检查/修改 api-client.js 的 depth 限制；然后在 viewer 目录执行 npm test && npm run build。
 # Viewer 静态路径固定为 /viewer/，不由 basePath 控制。未知字段会导致 ApiConfig 加载失败。
