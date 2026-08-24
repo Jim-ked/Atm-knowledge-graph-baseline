@@ -28,13 +28,17 @@ try {
     visibleDebugBlocks: [...document.querySelectorAll('[data-debug-only]')]
       .filter(element => !element.hidden).length,
     nodeLabelMode: document.querySelector('#node-label-mode')?.value,
-    edgeLabelMode: document.querySelector('#edge-label-mode')?.value
+    edgeLabelMode: document.querySelector('#edge-label-mode')?.value,
+    eyebrow: document.querySelector('.eyebrow')?.textContent ?? null,
+    pathQueryCollapsible: document.querySelector('details.path-query #path-form') != null
   }));
   require(results.shell.normal.debug === 'false', 'normal viewer debug flag mismatch');
   require(results.shell.normal.engine === 'g6', 'normal viewer is not G6');
   require(results.shell.normal.visibleDebugBlocks === 0, 'normal viewer exposes debug controls');
   require(results.shell.normal.nodeLabelMode === 'AUTO' && results.shell.normal.edgeLabelMode === 'AUTO',
     'normal viewer label defaults mismatch');
+  require(results.shell.normal.eyebrow === null, 'normal viewer still exposes the development eyebrow');
+  require(results.shell.normal.pathQueryCollapsible, 'path query was not kept in a compact details element');
 
   const debugPage = await context.newPage();
   debugPage.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
@@ -79,6 +83,30 @@ try {
   require(results.labels.autoSelected.renderedCaption === results.labels.autoSelected.fullCaption,
     'AUTO selected node does not expose its full caption');
 
+  results.interaction.nodeSelectionContext = await page.evaluate(async () => {
+    const gate = window.__ATMKG_PHASE5__;
+    await gate.setViewerLabelModes('AUTO', 'VISIBLE');
+    const selected = await gate.selectNodeByKind('Route');
+    const graph = gate.adapter.graph;
+    const distantNode = graph.getNodeData().find(node => graph.getElementState(node.id).length === 0);
+    const unrelatedEdge = graph.getEdgeData().find(edge => graph.getElementState(edge.id).length === 0);
+    return {
+      selectedState: graph.getElementState(selected),
+      distantNodeState: distantNode ? graph.getElementState(distantNode.id) : null,
+      unrelatedEdgeState: unrelatedEdge ? graph.getElementState(unrelatedEdge.id) : null,
+      unrelatedEdgeLabel: unrelatedEdge
+        ? graph.getElementRenderStyle(unrelatedEdge.id).labelText ?? '' : ''
+    };
+  });
+  require(results.interaction.nodeSelectionContext.selectedState.includes('selected'),
+    'ordinary selection did not emphasize the selected node');
+  require(results.interaction.nodeSelectionContext.distantNodeState?.length === 0,
+    'ordinary selection inactivated a distant node');
+  require(results.interaction.nodeSelectionContext.unrelatedEdgeState?.length === 0,
+    'ordinary selection inactivated an unrelated edge');
+  require(results.interaction.nodeSelectionContext.unrelatedEdgeLabel !== '',
+    'VISIBLE unrelated edge label disappeared after ordinary selection');
+
   await page.evaluate(() => window.__ATMKG_PHASE5__.adapter.graph.emit('canvas:click', { target: {} }));
 
   results.labels.edge = {};
@@ -105,18 +133,53 @@ try {
     return {
       visible: !document.querySelector('#relationship-detail').hidden,
       type: document.querySelector('#relationship-type').textContent,
-      expectedType: edge.data.type
+      expectedType: edge.data.type,
+      selectedState: gate.adapter.graph.getElementState(edge.id),
+      otherState: gate.adapter.graph.getEdgeData().slice(1)
+        .map(candidate => gate.adapter.graph.getElementState(candidate.id))
+        .find(states => states.length === 0) ?? null
     };
   });
   require(results.interaction.relationshipDetail.visible
     && results.interaction.relationshipDetail.type === results.interaction.relationshipDetail.expectedType,
   'relationship detail did not show type/properties context');
+  require(results.interaction.relationshipDetail.selectedState.includes('selected')
+    && results.interaction.relationshipDetail.otherState?.length === 0,
+  'relationship selection inactivated unrelated graph context');
+
+  results.interaction.pathFocus = await page.evaluate(async () => {
+    const gate = window.__ATMKG_PHASE5__;
+    const highlighted = gate.adapter.graph.getEdgeData()[0];
+    gate.model.highlightPath([highlighted.id]);
+    gate.adapter.highlightedRelationships = new Set([highlighted.id]);
+    await gate.adapter.applySelection(null);
+    const otherEdge = gate.adapter.graph.getEdgeData().find(edge => edge.id !== highlighted.id);
+    const pathNodeIds = new Set([highlighted.source, highlighted.target]);
+    const otherNode = gate.adapter.graph.getNodeData().find(node => !pathNodeIds.has(node.id));
+    return {
+      highlightedState: gate.adapter.graph.getElementState(highlighted.id),
+      otherEdgeState: otherEdge ? gate.adapter.graph.getElementState(otherEdge.id) : null,
+      otherNodeState: otherNode ? gate.adapter.graph.getElementState(otherNode.id) : null
+    };
+  });
+  require(results.interaction.pathFocus.highlightedState.includes('highlighted')
+    && results.interaction.pathFocus.otherEdgeState?.includes('inactive')
+    && results.interaction.pathFocus.otherNodeState?.includes('inactive'),
+  'path focus no longer inactivates non-path context');
 
   await page.evaluate(() => window.__ATMKG_PHASE5__.loadPreset('z001'));
   await page.evaluate(() => window.__ATMKG_PHASE5__.selectNodeByKind('Runway'));
   const beforeExpand = await page.evaluate(() => window.__ATMKG_PHASE5__.model.snapshot());
   await page.evaluate(() => window.__ATMKG_PHASE5__.expandSelected());
   const afterExpand = await page.evaluate(() => window.__ATMKG_PHASE5__.model.snapshot());
+  results.interaction.expandSelectionContext = await page.evaluate(oldNodeIds => {
+    const graph = window.__ATMKG_PHASE5__.adapter.graph;
+    return {
+      oldInactiveNodes: oldNodeIds.filter(id => graph.getElementState(id).includes('inactive')),
+      oldInactiveEdges: graph.getEdgeData()
+        .filter(edge => graph.getElementState(edge.id).includes('inactive')).map(edge => edge.id)
+    };
+  }, beforeExpand.nodes.map(node => node.id));
   await page.evaluate(() => window.__ATMKG_PHASE5__.collapseSelected());
   const afterCollapse = await page.evaluate(() => window.__ATMKG_PHASE5__.model.snapshot());
   results.interaction.expandCollapse = {
@@ -128,6 +191,9 @@ try {
   require(afterCollapse.nodes.length === beforeExpand.nodes.length
     && afterCollapse.relationships.length === beforeExpand.relationships.length,
   'collapse did not restore pre-expansion topology');
+  require(results.interaction.expandSelectionContext.oldInactiveNodes.length === 0
+    && results.interaction.expandSelectionContext.oldInactiveEdges.length === 0,
+  'expand inactivated existing graph context');
 
   results.interaction.pin = await page.evaluate(() => {
     const gate = window.__ATMKG_PHASE5__;
@@ -142,11 +208,15 @@ try {
   require(results.interaction.pin.afterPin && results.interaction.pin.afterUnpin, 'pin/unpin failed');
 
   await page.evaluate(() => window.__ATMKG_PHASE5__.loadPreset('z001'));
+  const beforeDoubleClick = await page.evaluate(() => window.__ATMKG_PHASE5__.model.snapshot());
   const doubleClickId = await page.evaluate(() => window.__ATMKG_PHASE5__.selectNodeByKind('Runway'));
   await page.evaluate(id => window.__ATMKG_PHASE5__.adapter.graph.emit('node:dblclick', { target: { id } }), doubleClickId);
-  await page.waitForFunction(() => window.__ATMKG_PHASE5__.model.snapshot().nodes.length > 3);
+  await page.waitForFunction(beforeCount =>
+    window.__ATMKG_PHASE5__.model.snapshot().nodes.length > beforeCount, beforeDoubleClick.nodes.length);
+  await page.waitForFunction(() => document.querySelector('#status')?.textContent.includes('G6 持久力场展开'));
   await page.evaluate(id => window.__ATMKG_PHASE5__.adapter.graph.emit('node:dblclick', { target: { id } }), doubleClickId);
-  await page.waitForFunction(() => window.__ATMKG_PHASE5__.model.snapshot().nodes.length === 3);
+  await page.waitForFunction(beforeCount =>
+    window.__ATMKG_PHASE5__.model.snapshot().nodes.length === beforeCount, beforeDoubleClick.nodes.length);
   results.interaction.doubleClick = await page.evaluate(() => ({
     action: window.__ATMKG_PHASE5__.adapter.diagnostics().viewerConfig.interaction.doubleClick,
     topology: [
@@ -155,7 +225,9 @@ try {
     ]
   }));
   require(results.interaction.doubleClick.action === 'EXPAND_OR_COLLAPSE', 'double-click config mismatch');
-  require(results.interaction.doubleClick.topology[0] === 3, 'double-click collapse failed');
+  require(results.interaction.doubleClick.topology[0] === beforeDoubleClick.nodes.length
+    && results.interaction.doubleClick.topology[1] === beforeDoubleClick.relationships.length,
+  'double-click collapse did not restore the pre-expansion topology');
 
   const snapshot = await page.evaluate(() => window.__ATMKG_PHASE5__.model.snapshot());
   const serialized = JSON.stringify(snapshot.nodes) + JSON.stringify(snapshot.relationships);
@@ -175,6 +247,8 @@ try {
   console.log('node_label_modes=4');
   console.log('edge_label_modes=3');
   console.log('expand_collapse=PASS');
+  console.log('selection_context=PASS');
+  console.log('path_focus=PASS');
   console.log('pin_unpin=PASS');
   console.log('viewer_specific_graphdto_fields=0');
   console.log('console_errors=0');

@@ -21,16 +21,20 @@ button {
   border-radius: 4px; padding: 7px 11px; cursor: pointer;
 }
 button:hover { border-color: #5a6879; background: #f4f6f8; }
-button:focus-visible, input:focus-visible { outline: 3px solid #60a5fa; outline-offset: 2px; }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible {
+  outline: 3px solid #60a5fa; outline-offset: 2px;
+}
 
 .topbar {
-  height: 82px; padding: 14px 24px; background: var(--navy); color: #fff;
-  display: flex; justify-content: space-between; align-items: center;
+  height: 60px; padding: 0 24px; background: var(--navy); color: #fff;
+  display: flex; align-items: center;
 }
-h1 { font-size: 23px; margin: 2px 0 0; font-weight: 650; letter-spacing: .02em; }
-.eyebrow { margin: 0; font-size: 10px; letter-spacing: .17em; color: #a8c3e6; }
-.status { border-left: 3px solid #2dd4bf; padding: 7px 12px; max-width: 46%; font-size: 13px; }
-.status.error { border-color: #fb7185; color: #fecdd3; }
+h1 { font-size: 22px; margin: 0; font-weight: 650; letter-spacing: .02em; }
+.status {
+  flex: 1 1 100%; min-height: 22px; padding: 5px 8px; border-left: 3px solid #14b8a6;
+  background: #f4f7f9; color: var(--muted); font-size: 12px;
+}
+.status.error { border-color: #e11d48; color: #9f1239; background: #fff1f2; }
 
 main { padding: 14px; }
 .controls {
@@ -38,14 +42,17 @@ main { padding: 14px; }
   display: flex; gap: 12px 18px; align-items: end; flex-wrap: wrap;
 }
 .control-group { display: flex; align-items: end; gap: 7px; }
-.control-group label, #path-form label { display: grid; gap: 4px; font-size: 11px; color: var(--muted); }
+.control-group label { display: grid; gap: 4px; font-size: 11px; color: var(--muted); }
 .group-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; margin-right: 2px; }
 input { height: 32px; border: 1px solid #aeb8c5; border-radius: 3px; padding: 5px 7px; color: var(--ink); }
 input[type=number] { width: 64px; }
 select { height: 30px; border: 1px solid #aeb8c5; border-radius: 3px; background: #fff; color: var(--ink); }
 
 .query-group { flex: 1 1 540px; }
-.path-query { flex: 1 1 680px; }
+.path-query { align-self: center; font-size: 12px; }
+.path-query > summary { cursor: pointer; color: #17406f; font-weight: 650; padding: 7px 2px; }
+.path-query[open] { flex: 1 1 100%; }
+.path-query[open] > summary { margin-bottom: 7px; }
 .workspace { display: grid; grid-template-columns: minmax(650px, 1fr) 320px; gap: 14px; margin-top: 14px; }
 .viewer-panel, .details { background: var(--paper); border: 1px solid var(--line); }
 .viewer-toolbar, .graph-footer {
@@ -58,7 +65,7 @@ select { height: 30px; border: 1px solid #aeb8c5; border-radius: 3px; background
 .debug-panel { border-bottom: 1px solid var(--line); background: #f7fafc; }
 .debug-panel > summary { cursor: pointer; padding: 8px 10px; color: #17406f; font-size: 12px; font-weight: 650; }
 .debug-panel[open] > summary { border-bottom: 1px solid var(--line); }
-.graph { height: calc(100vh - 254px); min-height: 500px; position: relative; overflow: hidden; background: #fafbfc; }
+.graph { height: calc(100vh - 222px); min-height: 500px; position: relative; overflow: hidden; background: #fafbfc; }
 .g6-poc-controls {
   min-height: 42px; padding: 6px 10px; border-bottom: 1px solid var(--line); background: #f7fafc;
   display: flex; align-items: center; gap: 12px; font-size: 11px;
@@ -73,7 +80,7 @@ select { height: 30px; border: 1px solid #aeb8c5; border-radius: 3px; background
 .force-fields label { display: flex; justify-content: space-between; align-items: center; color: var(--muted); }
 .force-fields button { grid-column: 1 / -1; }
 .g6-poc-controls[hidden] { display: none; }
-.details { padding: 0 14px; height: calc(100vh - 154px); min-height: 574px; overflow: auto; }
+.details { padding: 0 14px; height: calc(100vh - 132px); min-height: 574px; overflow: auto; }
 .details section { padding: 13px 0 16px; border-bottom: 1px solid var(--line); }
 .details section:last-child { border: 0; }
 h2 { margin: 0 0 10px; font-size: 14px; color: var(--navy); }

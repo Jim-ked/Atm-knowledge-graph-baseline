@@ -3,14 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>航管知识图谱 Viewer</title>
+  <title>航管知识图谱</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body data-debug="false">
   <header class="topbar">
-    <div><p class="eyebrow">GRAPHDTO VIEWER</p><h1>航管知识图谱</h1></div>
-    <div id="status" class="status" role="status" aria-live="polite">准备就绪</div>
+    <h1>航管知识图谱</h1>
   </header>
 
   <main>
@@ -21,12 +20,15 @@
         <label>深度 <input id="depth" type="number" min="1" max="8" value="2"></label>
         <button type="submit">查询 K-hop</button>
       </form>
-      <form id="path-form" class="control-group path-query">
-        <label>路径起点 UID <input id="path-from" size="22" autocomplete="off"></label>
-        <label>终点 UID <input id="path-to" size="22" autocomplete="off"></label>
-        <label>最大深度 <input id="path-depth" type="number" min="1" max="8" value="6"></label>
-        <button type="submit">查询路径</button>
-      </form>
+      <details class="path-query">
+        <summary>路径查询</summary>
+        <form id="path-form" class="control-group">
+          <label>路径起点 UID <input id="path-from" size="22" autocomplete="off"></label>
+          <label>终点 UID <input id="path-to" size="22" autocomplete="off"></label>
+          <label>最大深度 <input id="path-depth" type="number" min="1" max="8" value="6"></label>
+          <button type="submit">查询路径</button>
+        </form>
+      </details>
       <div id="api-presets" class="control-group debug-block" data-debug-only hidden>
         <span class="group-label">真实 API 快捷场景</span>
         <button data-preset="z001">Z001 一跳</button>
@@ -38,6 +40,7 @@
         <button data-scale="100">100</button><button data-scale="500">500</button>
         <button data-scale="1000">1000</button><button data-scale="1500">1500</button>
       </div>
+      <div id="status" class="status" role="status" aria-live="polite">准备就绪</div>
     </section>
 
     <section class="workspace">
