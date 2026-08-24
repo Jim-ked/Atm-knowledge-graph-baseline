@@ -1,6 +1,8 @@
 @echo off
 setlocal
 
+for %%I in ("%~dp0..") do set "PROJECT_ROOT=%%~fI"
+if exist "%PROJECT_ROOT%\tools\env.cmd" call "%PROJECT_ROOT%\tools\env.cmd"
 set "CONTAINER=atmkg-neo4j-dev"
 set "IMAGE=neo4j:5.26.0"
 set "DATA_VOLUME=atmkg-neo4j-dev-data"

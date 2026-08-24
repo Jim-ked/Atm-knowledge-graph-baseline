@@ -40,23 +40,73 @@ API 返回正确但页面不对时才查 Viewer，不要反向修改 GraphDTO �
 Oracle 当前按“配置 → 单条 resync → review”核验，不要把单元测试当真实数据库连通测试。
 
 
+离线接手审计 V1：缺口清单
+========================
+
+本轮从“没有聊天记录的第一次接手者”视角核对了 tools/*.cmd/*.sh、pom.xml、config、Viewer 和本手册。
+共记录 20 项真实操作缺口：
+
+部署阻塞（6 项，已修）
+  1. service 以前每次先 Maven compile/exec，没有 Maven-free 正式运行入口。
+  2. package 以前没有 target/lib 运行依赖布局，jar 不能单独离线启动。
+  3. 没有集中 env 入口，四个 Neo4j 变量依赖人工在当前 CMD 逐个 set。
+  4. 没有正式 runtime start/stop/status，也没有 PID/日志位置。
+  5. Review CLI 和同步 CLI 以前只能走 Maven；现在有构建产物时优先直接 Java 启动。
+  6. 没有 Kylin/Linux 对等 runtime.sh 和 env.sh.example。
+
+非常容易人工踩坑（8 项，已修）
+  1. JAVA_HOME/MAVEN_HOME 指向根目录还是 bin 目录容易混淆；脚本现在两种都接受。
+  2. Windows env 只对当前 CMD 有效；脚本现在自动加载 tools\env.cmd（若存在）。
+  3. Neo4j 启动脚本以前不会加载 env；现在会加载并明确提示缺项。
+  4. 缺少 Java 产物、运行依赖、Viewer dist 或关键配置时以前只能等启动异常；check/runtime 会先提示。
+  5. 18080 占用、旧 service 进程导致新 API 仍 404 的处理没有集中说明；已加入端口/PID/重启顺序。
+  6. 没有简单的 service 日志和 PID 位置；正式 runtime 统一放在 runtime\logs、runtime\state。
+  7. SLF4J/Log4j provider warning 容易被误认成启动失败；已明确以 health 和日志判断。
+  8. 开发启动与正式离线启动入口混在一起；现在明确区分 service.cmd 和 runtime.cmd。
+
+可以以后处理（6 项，明确延后）
+  1. source-preview/source-mapping 等开发准备工具仍可依赖 Maven。
+  2. 正式离线包的压缩、校验和发布清单。
+  3. 密码 secret manager、Windows Service、systemd、Docker 正式部署和自动升级。
+  4. Kylin 上的发行版级 Java/Neo4j 安装与权限自动化。
+  5. preview 脚本参数中包含空格时的跨 shell 深度兼容。
+  6. 远程运维、日志轮转和高可用。
+
+
 任务 0：第一次在开发机启动
 =========================
 
-1. 准备 JDK 17。pom.xml 的 maven.compiler.release 是 17；正式目标机使用私有 JDK 17，
-   不替换目标机系统 Java 8。
+先区分两个入口：
+
+  开发启动（允许 Maven）：tools\service.cmd
+    用于改 Java、重新编译、开发调试；每次启动会 compile + exec。停止优先在该窗口按 Ctrl+C。
+
+  正式离线运行（不依赖 Maven/npm）：tools\runtime.cmd start|stop|status
+    使用 target\atm-knowledge-graph-1.0-SNAPSHOT.jar、target\lib 和已经构建好的 viewer\dist。
+    首次交付前只需在有 Maven 的机器执行一次 `mvn.cmd -DskipTests package`。
+
+1. 准备私有 JDK 17。pom.xml 的 maven.compiler.release 是 17；正式目标机不替换系统 Java 8。
+   推荐复制模板并集中填写运行参数：
+
+     copy tools\env.cmd.example tools\env.cmd
+     notepad tools\env.cmd
+
+   正式 runtime 要求 JAVA_HOME 指向 JDK 根目录或包含 java.exe 的 bin 目录；开发脚本也接受 PATH Java。
+   检查：
+
+     tools\check.cmd
 
      set "JAVA_HOME=C:\tools\jdk-17"
      set "PATH=%JAVA_HOME%\bin;%PATH%"
      java -version
 
-2. 仓库没有 mvnw。安装 Maven 3.9.x（3.9.11 已验证）：
+2. 只有开发/构建时准备 Maven 3.9.x（3.9.11 已验证）。MAVEN_HOME 可填 Maven 根目录或 bin 目录：
 
      set "MAVEN_HOME=C:\tools\apache-maven-3.9.11"
      set "PATH=%MAVEN_HOME%\bin;%PATH%"
      mvn.cmd -version
 
-3. 为 Java 设置当前固定读取的四个 Neo4j 环境变量。密码只写在当前环境，不写进仓库：
+3. env.cmd 中填写当前固定读取的四个 Neo4j 环境变量。密码只写在被 .gitignore 忽略的 env.cmd：
 
      set "ATMKG_NEO4J_URI=bolt://127.0.0.1:17687"
      set "ATMKG_NEO4J_DATABASE=neo4j"
@@ -83,7 +133,7 @@ Oracle 当前按“配置 → 单条 resync → review”核验，不要把单�
      set "ATMKG_NEO4J_HOME=<Neo4j安装目录>"
      tools\neo4j.cmd start
 
-5. 另开 cmd，重新设置 JAVA_HOME/MAVEN_HOME/Neo4j 环境变量，然后：
+5. 开发启动：另开 CMD（脚本会自动加载 env.cmd），然后：
 
      tools\service.cmd
 
@@ -98,11 +148,26 @@ Oracle 当前按“配置 → 单条 resync → review”核验，不要把单�
    config\sources.yaml 当前为 sources: [] 时，控制台应显示 Query/API-only。它仍要求 Neo4j，
    但不会加载正式 mapping 或启动 polling。
 
-6. 正常停止：在 service.cmd 窗口按 Ctrl+C，再执行：
+6. 正式离线启动/停止：
+
+     tools\runtime.cmd start
+     tools\runtime.cmd status
+     tools\runtime.cmd stop
+
+   日志在 runtime\logs\service.log 和 service-error.log。正式 runtime 不调用 Maven/npm。
+
+7. 正常停止开发服务：在 service.cmd 窗口按 Ctrl+C，再执行：
 
      tools\neo4j-dev.cmd stop
 
    tools\neo4j-dev.cmd reset 会删除开发容器和数据卷，不是普通停止命令。
+
+第一次接手的正式离线最短链：
+  copy tools\env.cmd.example tools\env.cmd → 编辑 env.cmd → tools\check.cmd →
+  tools\neo4j.cmd start/status（或连接已有 Neo4j）→ tools\runtime.cmd start/status →
+  curl http://127.0.0.1:18080/api/v1/health → 打开 /viewer/ → tools\review.cmd →
+  在 Viewer 输入 Review CLI 输出的 Browser-ready 只读 Cypher。
+  停止顺序：tools\runtime.cmd stop → tools\neo4j.cmd stop；开发 service 则回原窗口 Ctrl+C。
 
 Node/npm 只在改 viewer 或重建 viewer\dist 时需要：
 
@@ -112,6 +177,45 @@ Node/npm 只在改 viewer 或重建 viewer\dist 时需要：
   npm run build
 
 正式 Viewer 只有 G6，不要重新加入 Sigma/Cytoscape/Graphology。
+
+
+任务 0A：启动失败和旧进程排查
+============================
+
+Maven/JDK：
+  `MAVEN_HOME` 应指向包含 `mvn.cmd` 的目录，或 Maven 根目录；不要把根目录误写成
+  `...\bin` 后再让脚本重复拼接，也不要把 `JAVA_HOME` 写成 JRE。`tools\check.cmd` 会同时检查两种目录形态。
+  env.cmd 由脚本加载，只作用于该脚本及其子进程；在一个 CMD 里 set，不会改变已经打开的另一个 CMD。
+
+Neo4j 环境变量：
+  缺 `ATMKG_NEO4J_URI`、`ATMKG_NEO4J_DATABASE`、`ATMKG_NEO4J_USERNAME` 或
+  `ATMKG_NEO4J_PASSWORD` 时，先复制 env.cmd.example 并补齐；不要在每个 CMD 手工重复 set。
+
+18080 被占用 / 新 API 仍返回 404：
+  1. 优先回到原 service.cmd 窗口按 Ctrl+C，等待进程退出。
+  2. 检查端口：
+
+       netstat -ano | findstr :18080
+
+  3. 记录末列 PID，再查进程：
+
+       tasklist /FI "PID eq <PID>"
+
+  4. 只有确认是本项目旧 service 且找不到原窗口时，才执行：
+
+       taskkill /PID <PID> /T
+
+     不要 `taskkill` 所有 `java.exe`，否则会误停 Neo4j、IDE 或其它项目。
+  5. 修改代码或重新构建后，旧 service 不会热更新；必须停止旧进程，再重新启动 service.cmd 或 runtime.cmd。
+
+SLF4J/Log4j provider warning：
+  当前 warning 不是启动失败原因。先看 health、HTTP 端口和 runtime 日志；只有进程退出、health DOWN
+  或出现后续异常时才按故障处理。
+
+配置/资源缺失：
+  `config/api.yaml`、`config/sources.yaml`、`mapping\字段映射.xlsx`、
+  `ontology\atm_knowledge_graph.ttl` 或 `viewer\dist\index.html` 缺失时，先运行 `tools\check.cmd`。
+  不要用 sources.local.yaml 替代正式 sources.yaml 启动正式 runtime；不要把缺文件误判为 Neo4j 故障。
 
 
 任务 1：我要增加一个 Excel Sheet 或一组同结构 XLSX
@@ -687,7 +791,19 @@ KGEntityContribution 是内部技术节点，不能出现在 QueryService/GraphD
     转发到 ATMKG_NEO4J_HOME\bin\neo4j.bat，控制已有安装。
 
   tools\service.cmd
-    启动 KgServiceMain、Query API 和 G6 Viewer；sources 非空时装配同步，polling 启用时写图。
+    开发启动 KgServiceMain、Query API 和 G6 Viewer；每次先 Maven compile，sources 非空时装配同步，polling 启用时写图。
+
+  tools\runtime.cmd
+    正式离线 start/stop/status；只使用已构建 target jar/target/lib 和 viewer\dist，不调用 Maven/npm。
+
+  tools\check.cmd
+    接手前检查私有 JDK、可选 Maven、四个 Neo4j 变量、关键配置/产物和 18080 端口；不自动修复。
+
+  tools\env.cmd.example
+    Windows 集中环境模板；复制为被忽略的 tools\env.cmd 后由各脚本自动加载。
+
+  tools\env.sh.example / tools\runtime.sh
+    Kylin/Linux 对应环境模板和正式离线 runtime 入口。
 
   tools\source-preview.cmd
     检查 Excel/JDBC → SourceRecord，不写 Neo4j；无参数优先 sources.local.yaml。
@@ -701,6 +817,12 @@ KGEntityContribution 是内部技术节点，不能出现在 QueryService/GraphD
 
   tools\review.cmd
     只读 Neo4j，显示图/数据结果和 Browser-ready Cypher；不依赖 sources.yaml。
+
+  Viewer Cypher
+    正式 Viewer 顶部可输入单条只读 Cypher，POST /api/v1/graph/cypher 返回同一 GraphDTO。
+    服务端先用 Neo4j EXPLAIN + QueryType.READ_ONLY 判定，再以 AccessMode.READ 执行；
+    不接受 EXPLAIN/PROFILE、params、写查询或 scalar-only 结果。节点规模由 Cypher 的 LIMIT
+    与 config/api.yaml 服务端硬上限共同控制，页面没有节点数量下拉框。
 
 
 任务 16：遇到这些需求不要找“开关”

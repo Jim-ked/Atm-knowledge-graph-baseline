@@ -11,3 +11,7 @@
 projectId、UID namespace、Neo4j 环境变量、唯一正式 TTL 和查询完整性原则等固定项见
 `docs/固定项与运行配置说明.md`。接数据、改 API 或开启 polling 前，先按 `tools/START_HERE.txt`
 中对应任务操作。
+
+首次离线接手先复制 `tools/env.cmd.example`（Kylin/Linux 使用 `tools/env.sh.example`），再运行
+`tools/check.cmd`；Linux 可先执行 `tools/runtime.sh status`，并人工检查 `ss -ltnp | grep 18080`。
+正式 runtime 不读取 Maven 仓或 npm；`tools/service.cmd` 仅是开发启动入口。

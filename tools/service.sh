@@ -2,7 +2,14 @@
 set -eu
 
 PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-MAVEN_COMMAND="${MAVEN_HOME:+${MAVEN_HOME}/bin/}mvn"
+if [ -f "$PROJECT_ROOT/tools/env.sh" ]; then . "$PROJECT_ROOT/tools/env.sh"; fi
+if [ -n "${MAVEN_HOME:-}" ] && [ -x "$MAVEN_HOME/bin/mvn" ]; then
+    MAVEN_COMMAND="$MAVEN_HOME/bin/mvn"
+elif [ -n "${MAVEN_HOME:-}" ] && [ -x "$MAVEN_HOME/mvn" ]; then
+    MAVEN_COMMAND="$MAVEN_HOME/mvn"
+else
+    MAVEN_COMMAND=mvn
+fi
 
 if ! command -v "$MAVEN_COMMAND" >/dev/null 2>&1 && [ ! -x "$MAVEN_COMMAND" ]; then
   echo "ERROR: Maven was not found. Put mvn on PATH or set MAVEN_HOME." >&2

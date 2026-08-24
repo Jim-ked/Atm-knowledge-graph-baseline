@@ -4,6 +4,8 @@
 *.iml
 *.log
 .env
+tools/env.cmd
+tools/env.sh
 config/*.local.yaml
 /fixtures/source-preview/
 /fixtures/mapping/source_preview_mapping.xlsx
@@ -12,3 +14,5 @@ viewer/node_modules/
 viewer/test-results/
 /runtime/state/*.json
 /runtime/state/*.tmp
+/runtime/state/*.pid
+/runtime/logs/

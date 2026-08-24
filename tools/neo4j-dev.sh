@@ -1,5 +1,7 @@
 #!/bin/sh
 
+PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+[ -f "$PROJECT_ROOT/tools/env.sh" ] && . "$PROJECT_ROOT/tools/env.sh"
 CONTAINER=atmkg-neo4j-dev
 IMAGE=neo4j:5.26.0
 DATA_VOLUME=atmkg-neo4j-dev-data

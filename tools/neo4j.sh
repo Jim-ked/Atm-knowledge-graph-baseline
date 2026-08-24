@@ -1,5 +1,7 @@
 #!/bin/sh
 
+PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+[ -f "$PROJECT_ROOT/tools/env.sh" ] && . "$PROJECT_ROOT/tools/env.sh"
 if [ -z "${ATMKG_NEO4J_HOME:-}" ]; then
     echo "ERROR: ATMKG_NEO4J_HOME is not set." >&2
     echo "Set ATMKG_NEO4J_HOME to the Neo4j installation directory." >&2

@@ -1,6 +1,8 @@
 @echo off
 setlocal
 
+for %%I in ("%~dp0..") do set "PROJECT_ROOT=%%~fI"
+if exist "%PROJECT_ROOT%\tools\env.cmd" call "%PROJECT_ROOT%\tools\env.cmd"
 if "%ATMKG_NEO4J_HOME%"=="" goto missing_home
 
 set "NEO4J_COMMAND=%ATMKG_NEO4J_HOME%\bin\neo4j.bat"

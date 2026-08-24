@@ -48,7 +48,7 @@
 - 同步：单条 resync、单入口 fullSync、全项目 fullRebuild、补偿扫描、可选 JDBC polling。
 - 查询：实体、完整一跳、完整 K 跳诱导子图、路径、外置 named query。
 - API：轻量 HTTP 服务，输出统一 GraphDTO；Viewer 静态挂载在 `/viewer/`。
-- Viewer：正式实现仅保留 G6。
+- Viewer：正式实现仅保留 G6；页面提供独立只读 Cypher 输入，结果复用同一 GraphDTO/GraphModel，不提供节点数量下拉框。
 - 人工工具：source preview、source→mapping preview、同步控制、Review CLI、Neo4j 控制脚本。
 
 ## 当前明确边界
@@ -80,13 +80,15 @@
 日常启动的最短路径：
 
 ```text
-1. 设置 ATMKG_NEO4J_URI / DATABASE / USERNAME / PASSWORD
-2. 启动 Neo4j
-3. tools\service.cmd
-4. 访问 /api/v1/health
-5. 打开 /viewer/
+1. copy tools\env.cmd.example tools\env.cmd 并填写私有 JDK、Neo4j 四变量
+2. tools\check.cmd
+3. 启动 Neo4j
+4. 正式离线运行：tools\runtime.cmd start
+5. 访问 /api/v1/health，再打开 /viewer/
 ```
 
+开发调试仍使用 `tools\service.cmd`；它会调用 Maven compile/exec。正式离线运行使用已构建的
+`target\atm-knowledge-graph-1.0-SNAPSHOT.jar`、`target\lib` 和 `viewer\dist`，不依赖 Maven/npm。
 具体命令、环境变量、数据源配置和危险操作说明不要从本 README 猜测，统一以 `tools/START_HERE.txt` 和代码当前注释为准。
 
 ## 依赖与环境
