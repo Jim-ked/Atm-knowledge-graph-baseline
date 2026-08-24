@@ -12,6 +12,8 @@ import java.util.List;
 import java.util.Map;
 import org.atmkg.core.error.GraphStoreException;
 import org.atmkg.core.model.GraphEntity;
+import org.atmkg.core.model.GraphProjectionSnapshot;
+import org.atmkg.core.model.GraphRelationship;
 import org.atmkg.core.model.MappingResult;
 import org.atmkg.core.model.SourceRecord;
 import org.atmkg.core.model.SourceRef;
@@ -33,9 +35,13 @@ class Neo4jMultiSourceEntityContributionTest {
     private static final String NS = "urn:atm-knowledge-graph:";
     private static final String PROJECT = "atmkg-multisource-contribution-it";
     private static final String UID = "urn:test:kg:entity:Airport:ZBAA";
+    private static final String RUNWAY_UID = "urn:test:kg:entity:Runway:RWY01";
+    private static final String RELATIONSHIP_UID = "urn:test:kg:relationship:hasRunway:ZBAA:RWY01";
     private static final SourceRef BASE = new SourceRef("fixture", "airport-base", "ZBAA");
     private static final SourceRef POSITION = new SourceRef("fixture", "airport-position", "ZBAA");
     private static final SourceRef SECONDARY = new SourceRef("fixture", "airport-secondary", "ZBAA");
+    private static final SourceRef RUNWAY = new SourceRef("fixture", "runway", "RWY01");
+    private static final SourceRef RELATION = new SourceRef("fixture", "airport-runway", "ZBAA|RWY01");
 
     @Test
     @EnabledIfSystemProperty(named = "atmkg.neo4j.it", matches = "true")
@@ -71,14 +77,43 @@ class Neo4jMultiSourceEntityContributionTest {
                 assertEquals(116.60, number(updated, "longitude"));
                 assertEquals(40.10, number(updated, "latitude"));
 
-                store.deleteProjection(POSITION);
+                GraphProjectionSnapshot positionDelete = store.deleteProjection(POSITION);
+                assertEquals(List.of(UID), positionDelete.getEntityUids());
+                assertTrue(positionDelete.getRelationshipUids().isEmpty());
+                assertEquals(List.of(UID), positionDelete.getAnchorEntityUids());
                 GraphEntity afterPositionDelete = store.findEntity(UID).orElseThrow();
                 assertEquals("北京首都", afterPositionDelete.getProperties().get(NS + "airportName"));
                 assertFalse(afterPositionDelete.getProperties().containsKey(NS + "longitude"));
                 assertFalse(afterPositionDelete.getProperties().containsKey(NS + "latitude"));
 
-                store.deleteProjection(BASE);
+                GraphProjectionSnapshot repeatedPositionDelete = store.deleteProjection(POSITION);
+                assertTrue(repeatedPositionDelete.getEntityUids().isEmpty());
+                assertTrue(repeatedPositionDelete.getRelationshipUids().isEmpty());
+                assertTrue(repeatedPositionDelete.getAnchorEntityUids().isEmpty());
+
+                GraphProjectionSnapshot baseDelete = store.deleteProjection(BASE);
+                assertEquals(List.of(UID), baseDelete.getEntityUids());
                 assertTrue(store.findEntity(UID).isEmpty());
+
+                store.replaceProjection(BASE, projection(entity(BASE, Map.of(
+                        NS + "airportName", "北京首都"))));
+                store.replaceProjection(RUNWAY, projection(entity(
+                        RUNWAY_UID, NS + "Runway", RUNWAY, Map.of())));
+                store.replaceProjection(RELATION, new MappingResult(List.of(), List.of(new GraphRelationship(
+                        RELATIONSHIP_UID, NS + "hasRunway", UID, RUNWAY_UID, Map.of(), provenance(RELATION)))));
+
+                assertThrows(GraphStoreException.class, () -> store.deleteProjection(BASE));
+                assertTrue(store.findEntity(UID).isPresent());
+
+                GraphProjectionSnapshot relationshipDelete = store.deleteProjection(RELATION);
+                assertTrue(relationshipDelete.getEntityUids().isEmpty());
+                assertEquals(List.of(RELATIONSHIP_UID), relationshipDelete.getRelationshipUids());
+                assertEquals(List.of(UID, RUNWAY_UID), relationshipDelete.getAnchorEntityUids());
+                assertTrue(store.findEntity(UID).isPresent());
+                assertTrue(store.findEntity(RUNWAY_UID).isPresent());
+                assertTrue(store.deleteProjection(RELATION).getRelationshipUids().isEmpty());
+                store.deleteProjection(RUNWAY);
+                store.deleteProjection(BASE);
 
                 store.replaceProjection(BASE, projection(entity(BASE, Map.of(
                         NS + "airportName", "北京首都"))));
@@ -129,10 +164,18 @@ class Neo4jMultiSourceEntityContributionTest {
     }
 
     private GraphEntity entity(SourceRef ref, Map<String, Object> properties) {
-        return new GraphEntity(UID, NS + "Airport", "ZBAA", properties, Map.of(
+        return entity(UID, NS + "Airport", ref, properties);
+    }
+
+    private GraphEntity entity(String uid, String classIri, SourceRef ref, Map<String, Object> properties) {
+        return new GraphEntity(uid, classIri, ref.getSourceKey(), properties, provenance(ref));
+    }
+
+    private Map<String, Object> provenance(SourceRef ref) {
+        return Map.of(
                 "sourceId", ref.getSourceId(),
                 "sourceObject", ref.getObjectName(),
-                "sourceKey", ref.getSourceKey()));
+                "sourceKey", ref.getSourceKey());
     }
 
     private MappingResult projection(GraphEntity entity) {

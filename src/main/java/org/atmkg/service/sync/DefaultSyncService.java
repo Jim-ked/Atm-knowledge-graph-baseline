@@ -11,6 +11,7 @@ import java.util.function.Consumer;
 import org.atmkg.core.error.SyncException;
 import org.atmkg.core.model.ChangeEvent;
 import org.atmkg.core.model.MappingResult;
+import org.atmkg.core.model.GraphProjectionSnapshot;
 import org.atmkg.core.model.SourceRecord;
 import org.atmkg.core.model.SourceRef;
 import org.atmkg.core.model.SourceScope;
@@ -27,7 +28,8 @@ import org.atmkg.core.spi.SyncService;
  * <p>ChangeEvent 只能提供 SourceRef；本类必须 readByKey 回读后 map + replaceProjection。绕过回读会把
  * polling 快照误当权威事实；把 fullSync 改成 clearProject 会误删其他入口。同步失败先记录
  * sourceId/objectName/sourceKey，并依次查 Adapter 输出、mapping 结果、GraphStore 异常。近期 eventId
- * 只做本进程抑制，不是 exactly-once；notice 只能在 GraphStore 成功后发布。
+ * 只做本进程抑制，不是 exactly-once；notice 只能在 GraphStore 成功后发布。DELETE 的 UID 摘要来自
+ * deleteProjection 同一事务返回值，不能在删除后重新查询或映射。
  */
 public final class DefaultSyncService implements SyncService {
     static final int RECENT_EVENT_LIMIT = 4096;
@@ -58,8 +60,8 @@ public final class DefaultSyncService implements SyncService {
         if (recentEventIds.get(event.getEventId()) != null) return;
         SourceRef ref = new SourceRef(event.getSourceId(), event.getObjectName(), event.getSourceKey());
         if (event.getOperation() == ChangeEvent.Operation.DELETE) {
-            graphStore.deleteProjection(ref);
-            noticeListener.accept(GraphChangeNotice.forDelete(ref, Instant.now()));
+            GraphProjectionSnapshot deleted = graphStore.deleteProjection(ref);
+            noticeListener.accept(GraphChangeNotice.forDelete(ref, deleted, Instant.now()));
         } else {
             Optional<MappingResult> result = resyncProjection(
                     event.getSourceId(), event.getObjectName(), event.getSourceKey());

@@ -4,6 +4,7 @@ import java.util.Collection;
 import java.util.Optional;
 import org.atmkg.core.model.GraphEntity;
 import org.atmkg.core.model.GraphRelationship;
+import org.atmkg.core.model.GraphProjectionSnapshot;
 import org.atmkg.core.model.GraphStoreStats;
 import org.atmkg.core.model.MappingResult;
 import org.atmkg.core.model.SourceRef;
@@ -22,8 +23,11 @@ public interface GraphStore {
      */
     void replaceProjection(SourceRef sourceRef, MappingResult currentProjection);
 
-    /** 删除一条源记录对应的图投影，例如权威源已经确认删除该记录。 */
-    void deleteProjection(SourceRef sourceRef);
+    /**
+     * 原子删除一条源记录对应的图投影，并返回同一删除事务中取得的删除前 UID 摘要。
+     * 返回的实体 UID 表示该源记录原来贡献过这些实体，不表示 canonical 实体一定被物理删除。
+     */
+    GraphProjectionSnapshot deleteProjection(SourceRef sourceRef);
 
     void deleteEntity(String uid);
     void deleteRelationship(String uid);

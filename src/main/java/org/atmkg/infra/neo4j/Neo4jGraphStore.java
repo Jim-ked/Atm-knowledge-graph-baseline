@@ -18,6 +18,7 @@ import java.util.stream.Collectors;
 import org.atmkg.core.error.GraphStoreException;
 import org.atmkg.core.model.GraphEntity;
 import org.atmkg.core.model.GraphRelationship;
+import org.atmkg.core.model.GraphProjectionSnapshot;
 import org.atmkg.core.model.GraphStoreStats;
 import org.atmkg.core.model.MappingResult;
 import org.atmkg.core.model.OntologySchema;
@@ -31,8 +32,8 @@ import org.neo4j.driver.TransactionContext;
 
 /**
  * 新增本体字段/类/关系或源表不要修改本类：分别改 TTL、{@code mapping/字段映射.xlsx} 和
- * {@code config/sources.yaml}。只有 Neo4j schema、replaceProjection 事务或 contribution 合并机制变化
- * 才进入这里写 Java。
+ * {@code config/sources.yaml}。只有 Neo4j schema、replace/deleteProjection 事务或 contribution 合并机制
+ * 变化才进入这里写 Java。
  *
  * <p>KGEntityContribution 按 (entityUid, SourceRef) 保存属性证据，再重建 canonical KGEntity；它不能进入
  * Query/GraphDTO/Viewer/业务统计。同属性不同值必须冲突回滚，改成“最后写入覆盖”会让结果依赖同步顺序。
@@ -322,36 +323,8 @@ public final class Neo4jGraphStore implements GraphStore {
 
         try (Session session = driver.session(sessionConfig)) {
             session.executeWrite(tx -> {
-                Map<String, Object> ref = sourceRefParams(sourceRef);
-
-                tx.run("MATCH ()-[r]->() " +
-                        "WHERE r.kg_project = $projectId AND r.kg_source_id = $sourceId " +
-                        "AND r.kg_source_object = $sourceObject AND r.kg_source_key = $sourceKey DELETE r", ref).consume();
-
-                List<String> staleEntityUids = tx.run(
-                        "MATCH (c:" + ENTITY_CONTRIBUTION_LABEL + ") " +
-                                "WHERE c.kg_project = $projectId AND c.kg_source_id = $sourceId " +
-                                "AND c.kg_source_object = $sourceObject AND c.kg_source_key = $sourceKey " +
-                                "AND NOT c.kg_entity_uid IN $currentEntityUids " +
-                                "RETURN DISTINCT c.kg_entity_uid AS uid",
-                        parameters("projectId", projectId,
-                                "sourceId", sourceRef.getSourceId(),
-                                "sourceObject", sourceRef.getObjectName(),
-                                "sourceKey", sourceRef.getSourceKey(),
-                                "currentEntityUids", currentEntityUids)).list(record -> record.get("uid").asString());
-                tx.run("MATCH (c:" + ENTITY_CONTRIBUTION_LABEL + ") " +
-                                "WHERE c.kg_project = $projectId AND c.kg_source_id = $sourceId " +
-                                "AND c.kg_source_object = $sourceObject AND c.kg_source_key = $sourceKey " +
-                                "AND NOT c.kg_entity_uid IN $currentEntityUids DELETE c",
-                        parameters("projectId", projectId,
-                                "sourceId", sourceRef.getSourceId(),
-                                "sourceObject", sourceRef.getObjectName(),
-                                "sourceKey", sourceRef.getSourceKey(),
-                                "currentEntityUids", currentEntityUids)).consume();
-
-                if (!entityRows.isEmpty()) writeEntityBatches(tx, entityRows);
-                if (!staleEntityUids.isEmpty()) rebuildCanonicalEntities(tx, staleEntityUids);
-                if (!relationshipRows.isEmpty()) writeRelationshipBatches(tx, relationshipRows);
+                replaceProjectionInTransaction(
+                        tx, sourceRef, entityRows, relationshipRows, currentEntityUids);
                 return null;
             });
         } catch (RuntimeException ex) {
@@ -361,8 +334,78 @@ public final class Neo4jGraphStore implements GraphStore {
     }
 
     @Override
-    public void deleteProjection(SourceRef sourceRef) {
-        replaceProjection(sourceRef, new MappingResult(List.of(), List.of()));
+    public GraphProjectionSnapshot deleteProjection(SourceRef sourceRef) {
+        Objects.requireNonNull(sourceRef, "sourceRef");
+        try (Session session = driver.session(sessionConfig)) {
+            return session.executeWrite(tx -> {
+                // before-state 读取与空投影替换共用这一个 write transaction；失败时二者一起回滚。
+                GraphProjectionSnapshot snapshot = projectionSnapshot(tx, sourceRef);
+                replaceProjectionInTransaction(tx, sourceRef, List.of(), List.of(), List.of());
+                return snapshot;
+            });
+        } catch (RuntimeException ex) {
+            throw new GraphStoreException("删除源记录图投影失败：" + sourceRef.getSourceId() + "/"
+                    + sourceRef.getObjectName() + "/" + sourceRef.getSourceKey(), ex);
+        }
+    }
+
+    private void replaceProjectionInTransaction(TransactionContext tx, SourceRef sourceRef,
+                                                List<Map<String, Object>> entityRows,
+                                                List<Map<String, Object>> relationshipRows,
+                                                List<String> currentEntityUids) {
+        Map<String, Object> ref = sourceRefParams(sourceRef);
+        tx.run("MATCH ()-[r]->() " +
+                "WHERE r.kg_project = $projectId AND r.kg_source_id = $sourceId " +
+                "AND r.kg_source_object = $sourceObject AND r.kg_source_key = $sourceKey DELETE r", ref).consume();
+
+        List<String> staleEntityUids = tx.run(
+                "MATCH (c:" + ENTITY_CONTRIBUTION_LABEL + ") " +
+                        "WHERE c.kg_project = $projectId AND c.kg_source_id = $sourceId " +
+                        "AND c.kg_source_object = $sourceObject AND c.kg_source_key = $sourceKey " +
+                        "AND NOT c.kg_entity_uid IN $currentEntityUids " +
+                        "RETURN DISTINCT c.kg_entity_uid AS uid",
+                parameters("projectId", projectId,
+                        "sourceId", sourceRef.getSourceId(),
+                        "sourceObject", sourceRef.getObjectName(),
+                        "sourceKey", sourceRef.getSourceKey(),
+                        "currentEntityUids", currentEntityUids)).list(record -> record.get("uid").asString());
+        tx.run("MATCH (c:" + ENTITY_CONTRIBUTION_LABEL + ") " +
+                        "WHERE c.kg_project = $projectId AND c.kg_source_id = $sourceId " +
+                        "AND c.kg_source_object = $sourceObject AND c.kg_source_key = $sourceKey " +
+                        "AND NOT c.kg_entity_uid IN $currentEntityUids DELETE c",
+                parameters("projectId", projectId,
+                        "sourceId", sourceRef.getSourceId(),
+                        "sourceObject", sourceRef.getObjectName(),
+                        "sourceKey", sourceRef.getSourceKey(),
+                        "currentEntityUids", currentEntityUids)).consume();
+
+        if (!entityRows.isEmpty()) writeEntityBatches(tx, entityRows);
+        if (!staleEntityUids.isEmpty()) rebuildCanonicalEntities(tx, staleEntityUids);
+        if (!relationshipRows.isEmpty()) writeRelationshipBatches(tx, relationshipRows);
+    }
+
+    private GraphProjectionSnapshot projectionSnapshot(TransactionContext tx, SourceRef sourceRef) {
+        Map<String, Object> ref = sourceRefParams(sourceRef);
+        List<String> entityUids = tx.run(
+                "MATCH (c:" + ENTITY_CONTRIBUTION_LABEL + ") " +
+                        "WHERE c.kg_project = $projectId AND c.kg_source_id = $sourceId " +
+                        "AND c.kg_source_object = $sourceObject AND c.kg_source_key = $sourceKey " +
+                        "RETURN DISTINCT c.kg_entity_uid AS uid ORDER BY uid", ref)
+                .list(record -> record.get("uid").asString());
+        List<Record> relationshipRows = tx.run(
+                "MATCH (s)-[r]->(t) " +
+                        "WHERE r.kg_project = $projectId AND r.kg_source_id = $sourceId " +
+                        "AND r.kg_source_object = $sourceObject AND r.kg_source_key = $sourceKey " +
+                        "RETURN DISTINCT r.kg_uid AS relationshipUid, s.kg_uid AS sourceUid, " +
+                        "t.kg_uid AS targetUid ORDER BY relationshipUid, sourceUid, targetUid", ref).list();
+        List<String> relationshipUids = new ArrayList<>();
+        LinkedHashSet<String> anchors = new LinkedHashSet<>(entityUids);
+        for (Record row : relationshipRows) {
+            relationshipUids.add(row.get("relationshipUid").asString());
+            anchors.add(row.get("sourceUid").asString());
+            anchors.add(row.get("targetUid").asString());
+        }
+        return new GraphProjectionSnapshot(entityUids, relationshipUids, List.copyOf(anchors));
     }
 
     @Override

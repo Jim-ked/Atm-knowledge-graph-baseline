@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.Optional;
 import org.atmkg.core.model.GraphEntity;
 import org.atmkg.core.model.GraphRelationship;
+import org.atmkg.core.model.GraphProjectionSnapshot;
 import org.atmkg.core.model.GraphStoreStats;
 import org.atmkg.core.model.MappingResult;
 import org.atmkg.core.model.SourceRef;
@@ -49,7 +50,24 @@ public final class InMemoryGraphStore implements GraphStore {
         upsertRelationships(current.getRelationships());
     }
 
-    public void deleteProjection(SourceRef ref) { replaceProjection(ref, new MappingResult(java.util.List.of(), java.util.List.of())); }
+    public GraphProjectionSnapshot deleteProjection(SourceRef ref) {
+        var entityUids = entities.values().stream()
+                .filter(entity -> hasRef(entity.getProvenance(), ref))
+                .map(GraphEntity::getUid)
+                .toList();
+        var ownedRelationships = relationships.values().stream()
+                .filter(relationship -> hasRef(relationship.getProvenance(), ref))
+                .toList();
+        var anchors = new java.util.LinkedHashSet<String>(entityUids);
+        ownedRelationships.forEach(relationship -> {
+            anchors.add(relationship.getSourceUid());
+            anchors.add(relationship.getTargetUid());
+        });
+        GraphProjectionSnapshot snapshot = new GraphProjectionSnapshot(entityUids,
+                ownedRelationships.stream().map(GraphRelationship::getUid).toList(), java.util.List.copyOf(anchors));
+        replaceProjection(ref, new MappingResult(java.util.List.of(), java.util.List.of()));
+        return snapshot;
+    }
     public void deleteEntity(String uid) {
         entities.remove(uid);
         relationships.values().removeIf(r -> r.getSourceUid().equals(uid) || r.getTargetUid().equals(uid));

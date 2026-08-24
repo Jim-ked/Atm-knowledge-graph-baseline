@@ -18,6 +18,7 @@ import org.atmkg.core.model.ChangeEvent;
 import org.atmkg.core.error.SyncException;
 import org.atmkg.core.model.GraphEntity;
 import org.atmkg.core.model.GraphRelationship;
+import org.atmkg.core.model.GraphProjectionSnapshot;
 import org.atmkg.core.model.GraphStoreStats;
 import org.atmkg.core.model.MappingResult;
 import org.atmkg.core.model.SourceRecord;
@@ -95,8 +96,10 @@ class DefaultSyncServiceTest {
     }
 
     @Test
-    void deleteEventDoesNotNeedSourcePayload() {
+    void deleteEventPublishesTheProjectionSnapshotReturnedByGraphStore() {
         RecordingStore store = new RecordingStore();
+        store.deleteSnapshot = new GraphProjectionSnapshot(
+                List.of("U1"), List.of("R1"), List.of("U1", "U2"));
         List<GraphChangeNotice> notices = new ArrayList<>();
         DefaultSyncService service = new DefaultSyncService(
                 Map.of("fixture", adapter(Optional.empty())), r -> new MappingResult(List.of(), List.of()),
@@ -107,8 +110,31 @@ class DefaultSyncServiceTest {
         assertEquals("K1", store.lastDeleted.getSourceKey());
         assertEquals(1, notices.size());
         assertEquals(GraphChangeNotice.Operation.DELETE, notices.get(0).getOperation());
-        assertTrue(notices.get(0).getEntityUids().isEmpty());
-        assertTrue(notices.get(0).getRelationshipUids().isEmpty());
+        assertEquals(List.of("U1"), notices.get(0).getEntityUids());
+        assertEquals(List.of("R1"), notices.get(0).getRelationshipUids());
+        assertEquals(List.of("U1", "U2"), notices.get(0).getAnchorEntityUids());
+    }
+
+    @Test
+    void deleteFailurePublishesNoNoticeAndDoesNotMarkEventProcessed() {
+        RecordingStore store = new RecordingStore();
+        store.failNextDelete = true;
+        store.deleteSnapshot = new GraphProjectionSnapshot(List.of("U1"), List.of(), List.of("U1"));
+        List<GraphChangeNotice> notices = new ArrayList<>();
+        DefaultSyncService service = new DefaultSyncService(
+                Map.of("fixture", adapter(Optional.empty())), r -> new MappingResult(List.of(), List.of()),
+                store, notices::add);
+        ChangeEvent event = new ChangeEvent("E-DELETE-RETRY", "fixture", "OBJECT", "K1",
+                ChangeEvent.Operation.DELETE, Instant.now());
+
+        assertThrows(IllegalStateException.class, () -> service.handle(event));
+        assertTrue(notices.isEmpty());
+
+        service.handle(event);
+
+        assertEquals(2, store.deleteAttempts);
+        assertEquals(1, notices.size());
+        assertEquals(List.of("U1"), notices.get(0).getEntityUids());
     }
 
     @Test
@@ -295,6 +321,9 @@ class DefaultSyncServiceTest {
         int replaceAttempts;
         int replaceCount;
         boolean failNextReplace;
+        boolean failNextDelete;
+        int deleteAttempts;
+        GraphProjectionSnapshot deleteSnapshot = GraphProjectionSnapshot.empty();
         public void initializeSchema() {}
         public void upsertEntities(Collection<GraphEntity> entities) {}
         public void upsertRelationships(Collection<GraphRelationship> relationships) {}
@@ -307,7 +336,15 @@ class DefaultSyncServiceTest {
             lastReplaced = sourceRef; lastProjection = currentProjection;
             replaceCount++;
         }
-        public void deleteProjection(SourceRef sourceRef) { lastDeleted = sourceRef; }
+        public GraphProjectionSnapshot deleteProjection(SourceRef sourceRef) {
+            deleteAttempts++;
+            if (failNextDelete) {
+                failNextDelete = false;
+                throw new IllegalStateException("simulated delete failure");
+            }
+            lastDeleted = sourceRef;
+            return deleteSnapshot;
+        }
         public void deleteEntity(String uid) {}
         public void deleteRelationship(String uid) {}
         public Optional<GraphEntity> findEntity(String uid) { return Optional.empty(); }

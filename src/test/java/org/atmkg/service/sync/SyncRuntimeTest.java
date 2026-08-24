@@ -15,6 +15,7 @@ import org.atmkg.core.model.ChangeEvent;
 import org.atmkg.core.model.GraphEntity;
 import org.atmkg.core.model.GraphRelationship;
 import org.atmkg.core.model.GraphStoreStats;
+import org.atmkg.core.model.GraphProjectionSnapshot;
 import org.atmkg.core.model.MappingResult;
 import org.atmkg.core.model.SourceRecord;
 import org.atmkg.core.model.SourceRef;
@@ -109,7 +110,9 @@ class SyncRuntimeTest {
         @Override public void replaceProjection(SourceRef sourceRef, MappingResult currentProjection) {
             lastProjection = currentProjection;
         }
-        @Override public void deleteProjection(SourceRef sourceRef) {}
+        @Override public GraphProjectionSnapshot deleteProjection(SourceRef sourceRef) {
+            return GraphProjectionSnapshot.empty();
+        }
         @Override public void deleteEntity(String uid) {}
         @Override public void deleteRelationship(String uid) {}
         @Override public Optional<GraphEntity> findEntity(String uid) { return Optional.empty(); }

@@ -13,6 +13,7 @@ import java.util.Set;
 import org.atmkg.core.model.GraphDTO;
 import org.atmkg.core.model.GraphEntity;
 import org.atmkg.core.model.GraphRelationship;
+import org.atmkg.core.model.GraphProjectionSnapshot;
 import org.atmkg.core.model.MappingResult;
 import org.atmkg.core.model.QuerySpec;
 import org.atmkg.core.model.SourceRef;
@@ -88,7 +89,8 @@ class GraphChangeNeighborhoodProjectorTest {
     void deleteSkipsCurrentNeighborhoodWithoutGuessingHistoricalAnchors() {
         CountingQuery query = new CountingQuery();
         GraphChangeNeighborhoodResult result = new GraphChangeNeighborhoodProjector(query)
-                .project(GraphChangeNotice.forDelete(REF, NOW));
+                .project(GraphChangeNotice.forDelete(REF,
+                        new GraphProjectionSnapshot(List.of("U1"), List.of("R1"), List.of("U1", "U2")), NOW));
 
         assertEquals(GraphChangeNeighborhoodResult.Status.SKIPPED_DELETE, result.getStatus());
         assertTrue(result.getSnapshots().isEmpty());

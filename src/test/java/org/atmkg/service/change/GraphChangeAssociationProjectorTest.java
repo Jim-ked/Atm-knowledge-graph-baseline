@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Set;
 import org.atmkg.core.model.GraphDTO;
 import org.atmkg.core.model.GraphNodeDTO;
+import org.atmkg.core.model.GraphProjectionSnapshot;
 import org.atmkg.core.model.QuerySpec;
 import org.atmkg.core.model.SourceRef;
 import org.atmkg.core.spi.QueryService;
@@ -82,7 +83,8 @@ class GraphChangeAssociationProjectorTest {
     void deleteAndMissingAnchorAreSkippedWithoutAssociationQueries() {
         ScenarioQuery deleteDelegate = new ScenarioQuery();
         List<AssociationQueryResult> deleted = projector(deleteDelegate).project(
-                GraphChangeNotice.forDelete(new SourceRef("source", "object", "key"), NOW));
+                GraphChangeNotice.forDelete(new SourceRef("source", "object", "key"),
+                        new GraphProjectionSnapshot(List.of("U1"), List.of("R1"), List.of("U1", "U2")), NOW));
         assertTrue(deleted.isEmpty());
         assertTrue(deleteDelegate.calls.isEmpty());
 
