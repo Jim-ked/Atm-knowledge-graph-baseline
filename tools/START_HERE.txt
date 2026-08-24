@@ -6,6 +6,40 @@
   cd /d D:\Data\项目代码\atm-knowledge-graph-baseline
 
 
+项目模块和问题定位
+==================
+
+数据读取
+  位置：infra/source
+  问题：Excel/Oracle 数据读不出来时先看这里。Excel 可用 source-preview；当前 JDBC 没有 preview。
+
+本体和字段映射
+  位置：infra/ontology、infra/mapping、infra/identity
+  问题：源数据正确，但实体、属性、关系或 UID 不对时先看这里。
+
+同步更新
+  位置：service/sync、infra/trigger
+  问题：源数据变了，但图没有跟着变化时先看这里。
+
+图存储
+  位置：infra/neo4j
+  问题：映射结果正确，但 Neo4j 写入结果不对时先看这里。
+
+图查询
+  位置：infra/query、service/query
+  问题：图里数据正确，但实体、一跳、K 跳、路径或 named query 不对时先看这里。
+
+变化关联
+  位置：service/change
+  问题：数据变化后的关联查询和影响结果看这里；当前组件尚未正式装配到服务。
+
+HTTP 接口：api/http。人工工具：tools、review。图形显示：viewer。
+API 返回正确但页面不对时才查 Viewer，不要反向修改 GraphDTO 或图数据。
+
+人工先判断四件事：原始数据读对了吗；映射结果对了吗；Neo4j 图结果对了吗；API/页面能用吗。
+Oracle 当前按“配置 → 单条 resync → review”核验，不要把单元测试当真实数据库连通测试。
+
+
 任务 0：第一次在开发机启动
 =========================
 
@@ -29,8 +63,8 @@
      set "ATMKG_NEO4J_USERNAME=neo4j"
      set "ATMKG_NEO4J_PASSWORD=<开发实例密码>"
 
-   这四个名字写死在 Neo4jConnectionSettings。修改 config\neo4j.yaml 中的 uriEnv 等名称，
-   Java 仍会读取 ATMKG_NEO4J_*，不会跟着变。
+   这四个名字写死在 Neo4jConnectionSettings。固定项说明见
+   docs\固定项与运行配置说明.md。
 
 4. 使用 Docker Neo4j 5.26 开发实例：
 
@@ -165,7 +199,7 @@ DBA 必须提供并逐项确认：
   adapter         固定写 jdbc；当前是通用 JDBC Adapter，不是 Oracle 专用 Adapter。
   driver          JDBC driver 类；当前 pom.xml 已带 ojdbc17 runtime Thin Driver。
   url             Oracle HOST、PORT、SERVICE_NAME；不要把账号或密码拼进 URL。
-  usernameEnv     存放只读用户名的环境变量名，例如 ATMKG_JDBC_USERNAME。
+  usernameEnv     存放数据库用户名的环境变量名，例如 ATMKG_JDBC_USERNAME。
   passwordEnv     存放密码的环境变量名，例如 ATMKG_JDBC_PASSWORD。
   fetchSize       流式批读取提示，默认 500。
   example-object  sourceObject；mapping 用这个值，不是数据库表名。
@@ -175,10 +209,11 @@ DBA 必须提供并逐项确认：
 
 启动前设置环境变量：
 
-  set "ATMKG_JDBC_USERNAME=<只读用户名>"
+  set "ATMKG_JDBC_USERNAME=<数据库用户名>"
   set "ATMKG_JDBC_PASSWORD=<密码>"
 
-账号只需要 SELECT。不要授予 CREATE/UPDATE/DELETE/ALTER/DROP；项目不会给源库建表或建索引。
+ATMKG 当前 JDBC Adapter 只生成 SELECT，不会主动向 Oracle 业务源库执行
+INSERT/UPDATE/DELETE/DDL。现场账号即使具有更高权限，本项目当前也不依赖这些写权限。
 watermarkField 最好有数据库索引。当前 SQL 是 WHERE UPDATED_AT > ?，通过 setTimestamp 绑定，
 ResultSet.getTimestamp 转 Instant；Oracle DATE/TIMESTAMP 列必须能稳定进行 JDBC Timestamp 比较。
 NUMBER/VARCHAR2/DATE/TIMESTAMP 均通过 JDBC 通用 ResultSet 读取，不进入 Core 类型体系。
@@ -388,7 +423,7 @@ ChangeQueryRuleRegistry + GraphChangeAssociationProjector 独立调用正确；�
 =============================
 
 1. 先在 config\sources.yaml 对目标 JDBC object 配置 watermarkField，例如 updated_at。
-2. 确认数据库列有索引、类型可被 JDBC Timestamp 读取，并且只读账号能 SELECT。
+2. 确认数据库列有索引、类型可被 JDBC Timestamp 读取，并且现场数据库账号能执行 SELECT。
 3. 改 config\sync.yaml：
 
      sync:
@@ -548,8 +583,7 @@ API GraphDTO 正确而页面失败：才查 viewer/src 和浏览器 console。
 任务 13：我修改了本体，下一步做什么
 ====================================
 
-唯一正式本体是 ontology\atm_knowledge_graph.ttl。config\ontology.yaml 当前不被服务加载，
-修改其中 file 不会切换运行时 TTL；历史版本只由 Git 保存。
+唯一正式本体是 ontology\atm_knowledge_graph.ttl，服务直接读取该路径；历史版本只由 Git 保存。
 
 1. 修改 TTL 后，打开 mapping\字段映射.xlsx：
 

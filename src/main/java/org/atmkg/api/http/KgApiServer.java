@@ -23,7 +23,10 @@ import org.atmkg.core.model.OntologySchema;
 import org.atmkg.core.model.QuerySpec;
 import org.atmkg.core.spi.QueryService;
 
-/** Thin HTTP adapter: request validation and JSON only; all graph semantics stay in QueryService. */
+/**
+ * 轻量 HTTP 入口，只负责请求校验、调用 QueryService 和返回 JSON，不实现图查询或业务语义。
+ * 接口路径和结果上限改 {@code config/api.yaml}；API 正确但页面异常时应检查 Viewer。
+ */
 public final class KgApiServer implements AutoCloseable {
     private static final String JSON_CONTENT_TYPE = "application/json; charset=utf-8";
 
@@ -54,7 +57,7 @@ public final class KgApiServer implements AutoCloseable {
         started = true;
     }
 
-    /** Mounts development-only static files without coupling the API or GraphDTO to a Viewer. */
+    /** 挂载开发用静态文件，但不让 API 或 GraphDTO 依赖具体 Viewer。 */
     public synchronized void mountStatic(String urlPrefix, Path directory) {
         if (started) throw new IllegalStateException("静态资源必须在服务启动前挂载");
         Objects.requireNonNull(urlPrefix, "urlPrefix");

@@ -10,7 +10,7 @@ import org.atmkg.core.model.QuerySpec;
 import org.atmkg.core.spi.QueryService;
 import org.atmkg.service.sync.GraphChangeNotice;
 
-/** Queries an independent complete current one-hop snapshot for every explicit UPSERT anchor. */
+/** 为每个明确的 UPSERT anchor 分别查询当前完整一跳快照；不合并或猜测 anchor。 */
 public final class GraphChangeNeighborhoodProjector implements Consumer<GraphChangeNotice> {
     private final QueryService queryService;
     private final Consumer<GraphChangeNeighborhoodResult> resultConsumer;

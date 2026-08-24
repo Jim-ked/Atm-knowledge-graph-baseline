@@ -14,7 +14,7 @@ import org.atmkg.core.model.GraphDTO;
 import org.atmkg.core.model.GraphNodeDTO;
 import org.atmkg.core.model.GraphRelationshipDTO;
 
-/** Stable JSON boundary kept outside Core so GraphDTO remains framework-independent. */
+/** API 的稳定 JSON 转换边界，留在 Core 之外以保持 GraphDTO 不依赖具体 HTTP/JSON 框架。 */
 final class ApiJson {
     private static final ObjectMapper MAPPER = new ObjectMapper()
             .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);

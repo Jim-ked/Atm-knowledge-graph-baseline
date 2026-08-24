@@ -17,7 +17,7 @@ import org.neo4j.driver.Result;
 import org.neo4j.driver.Session;
 import org.neo4j.driver.SessionConfig;
 
-/** Optional, development-only console runner for review/queries.yaml. */
+/** 供人工核验使用的开发期控制台工具，只执行 {@code review/queries.yaml} 中的受控查询。 */
 public final class ReviewTool {
     private ReviewTool() {}
 

@@ -41,7 +41,7 @@ public final class GraphChangeNotice {
         this.occurredAt = Objects.requireNonNull(occurredAt, "occurredAt");
     }
 
-    /** Builds an UPSERT notice exclusively from the MappingResult that was committed to GraphStore. */
+    /** 只根据已经提交到 GraphStore 的 MappingResult 构造 UPSERT notice。 */
     public static GraphChangeNotice forUpsert(SourceRef sourceRef, MappingResult result, Instant occurredAt) {
         Objects.requireNonNull(result, "result");
         List<String> entityUids = result.getEntities().stream().map(entity -> entity.getUid()).toList();

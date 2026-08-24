@@ -14,7 +14,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 
-/** Validated process-level synchronization policy loaded from config/sync.yaml. */
+/** 读取并严格校验 {@code config/sync.yaml} 中的进程级同步和 polling 策略。 */
 public final class SyncRuntimeConfig {
     private static final Set<String> SYNC_FIELDS = Set.of(
             "initialFullImport", "incremental", "compensation", "manualResync",

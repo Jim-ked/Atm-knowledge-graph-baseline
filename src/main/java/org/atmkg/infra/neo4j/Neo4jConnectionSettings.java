@@ -3,7 +3,10 @@ package org.atmkg.infra.neo4j;
 import java.util.Map;
 import java.util.Objects;
 
-/** Explicit Neo4j connection settings. No localhost/default-database fallback is allowed. */
+/**
+ * 从固定 ATMKG_NEO4J_* 环境变量形成 Neo4j 连接设置，不回退到 localhost 或默认数据库。
+ * 地址和账号应在启动进程环境中设置；固定项说明见 {@code docs/固定项与运行配置说明.md}。
+ */
 public final class Neo4jConnectionSettings {
     private final String uri;
     private final String database;

@@ -13,8 +13,8 @@ import org.atmkg.core.model.OntologySchema;
 import org.atmkg.core.model.OntologyTerm;
 
 /**
- * Converts the current ontology vocabulary into safe, deterministic Neo4j tokens.
- * It is infrastructure metadata, not a second ontology or business mapping layer.
+ * 把当前本体词汇转换为安全、确定的 Neo4j label/type token。
+ * 这里只是图存储元数据，不是第二套本体或业务 mapping；普通术语变化仍修改正式 TTL。
  */
 public final class Neo4jOntologyMetadata {
     private static final String TECHNICAL_ENTITY_LABEL = "KGEntity";

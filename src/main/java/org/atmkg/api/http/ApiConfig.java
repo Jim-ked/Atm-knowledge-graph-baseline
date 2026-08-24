@@ -8,7 +8,7 @@ import java.nio.file.Path;
 import java.util.Iterator;
 import java.util.Set;
 
-/** Validated configuration for the single lightweight HTTP adapter. */
+/** 读取并严格校验 {@code config/api.yaml}；不承载查询语义或 Viewer 配置。 */
 public final class ApiConfig {
     private static final Set<String> ALLOWED_FIELDS = Set.of(
             "host", "port", "basePath", "schemaVersion", "maxDepth", "maxRequestBytes",

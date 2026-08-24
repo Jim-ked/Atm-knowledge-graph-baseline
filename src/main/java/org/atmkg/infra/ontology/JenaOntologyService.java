@@ -21,6 +21,10 @@ import org.atmkg.core.model.OntologySchema;
 import org.atmkg.core.model.OntologyTerm;
 import org.atmkg.core.spi.OntologyService;
 
+/**
+ * 使用 Jena 把唯一正式 TTL 读取为 OntologySchema，不负责 mapping 刷新、UID 或图存储。
+ * 普通本体术语变化直接编辑 TTL；只有通用 RDF/OWL 读取规则变化才修改本类。
+ */
 public final class JenaOntologyService implements OntologyService {
     private static final String DESIGN_STATUS_IRI = "urn:atm-knowledge-graph:designStatus";
 

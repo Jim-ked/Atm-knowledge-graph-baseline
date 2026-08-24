@@ -144,18 +144,17 @@ HTTP 服务由轻量 `KgApiServer` 提供，配置位于 `config/api.yaml`。当
 
 ## 11. 配置事实
 
-并非所有 YAML 都是当前运行时动态配置入口：
+`config/` 当前只保留正式运行时会直接读取的 YAML：
 
 - `sources.yaml`：正式同步装配直接读取；
 - `sync.yaml`：正式同步装配直接读取；
 - `api.yaml`：服务直接读取；
-- `query-templates.yaml`：服务直接读取；
-- `project.yaml`：当前主要是项目/路径索引，关键值仍有 Java 固定值；
-- `neo4j.yaml`：当前主要记录固定环境变量名称，连接实际由 `ATMKG_NEO4J_*` 读取；
-- `query.yaml`：当前是查询语义基线声明，不是运行时开关；
-- `ontology.yaml`：当前是本体/refresh 基线说明，服务实际直接读取固定 TTL 路径。
 
-修改配置前应以 `tools/START_HERE.txt` 和当前代码注释为准，不能根据文件名猜测动态生效范围。
+`queries/query-templates.yaml` 也由服务直接读取，但位于 queries 目录，不属于 `config/`。
+projectId、UID namespace、Neo4j 环境变量、唯一正式 TTL 和查询完整性原则见
+`docs/固定项与运行配置说明.md`。
+
+修改配置前应以 `tools/START_HERE.txt` 和当前代码注释为准。
 
 ## 12. 部署与依赖边界
 

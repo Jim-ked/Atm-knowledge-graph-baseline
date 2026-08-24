@@ -1,9 +1,0 @@
-# 当前没有 Java 类加载本文件；这些 true 记录必须保持的查询语义，不是可开关参数。
-query:
-  completeOneHop: true            # 一跳不做 top-N/随机抽样
-  completeKHop: true              # 约束深度内不静默 LIMIT
-  completeReturnedSubgraph: true  # 返回节点之间原图关系必须完整
-  explicitOverflowFailure: true   # 超 config/api.yaml 上限时显式失败
-
-# 新 named query 去 queries/query-templates.yaml；调整 API depth/结果上限去 config/api.yaml。
-# 修改本文件不会改变 Neo4jQueryService，也不能在这里写 raw Cypher 或空间推理。

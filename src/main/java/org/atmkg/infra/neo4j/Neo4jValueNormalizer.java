@@ -14,7 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import org.atmkg.core.error.GraphStoreException;
 
-/** Converts generic mapping values to Neo4j property-compatible scalar/array values. */
+/** 把通用 mapping 值转换为 Neo4j 属性可接受的标量或数组；不解释业务字段语义。 */
 final class Neo4jValueNormalizer {
     private Neo4jValueNormalizer() {}
 

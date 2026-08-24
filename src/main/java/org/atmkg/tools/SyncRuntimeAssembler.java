@@ -106,6 +106,8 @@ final class SyncRuntimeAssembler {
         Objects.requireNonNull(schema, "schema");
         Objects.requireNonNull(driver, "driver");
         Objects.requireNonNull(neo4j, "neo4j");
+
+        // 1. 根据正式 sources 配置创建物理数据源 Adapter。
         Map<String, SourceAdapter> adapters = new LinkedHashMap<>();
         for (ConfiguredSource source : plan.sources().getSources().values()) {
             SourceAdapter adapter = switch (source.getAdapter().toLowerCase(Locale.ROOT)) {
@@ -116,6 +118,7 @@ final class SyncRuntimeAssembler {
             adapters.put(source.getSourceId(), adapter);
         }
 
+        // 2. 加载人工 mapping，并初始化 Neo4j 图存储和同步服务。
         MappingCatalog catalog = new PoiMappingRegistry().load(
                 plan.root().resolve("mapping/字段映射.xlsx"), schema);
         DefaultMappingEngine mapping = new DefaultMappingEngine(catalog,
@@ -127,6 +130,7 @@ final class SyncRuntimeAssembler {
             return new SyncAssembly(syncService, SyncRuntime.enabled(syncService));
         }
 
+        // 3. 仅在正式 sync 配置启用时装配 JDBC polling。
         List<JdbcPollingTriggerAdapter.PollingScope> scopes = plan.sync().getPollingScopes().stream()
                 .map(scope -> new JdbcPollingTriggerAdapter.PollingScope(
                         scope.sourceId(), scope.sourceObject(), scope.initialWatermark()))
