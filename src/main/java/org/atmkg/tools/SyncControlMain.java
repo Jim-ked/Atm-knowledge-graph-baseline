@@ -21,6 +21,7 @@ import org.atmkg.infra.neo4j.Neo4jConnectionSettings;
 import org.atmkg.infra.neo4j.Neo4jDriverFactory;
 import org.atmkg.infra.ontology.JenaOntologyService;
 import org.atmkg.infra.source.config.ConfiguredSource;
+import org.atmkg.infra.trigger.PollingCheckpointStore;
 import org.atmkg.service.sync.SyncRuntimeConfig;
 import org.neo4j.driver.Driver;
 
@@ -42,10 +43,12 @@ public final class SyncControlMain {
                 : Path.of(args[0]).toAbsolutePath().normalize();
         SyncRuntimeAssembler.AssemblyPlan plan = SyncRuntimeAssembler.plan(root);
         List<SourceEntry> entries = sourceEntries(plan);
+        PollingCheckpointStore checkpoints = new PollingCheckpointStore(
+                root.resolve(PollingCheckpointStore.DEFAULT_RELATIVE_PATH));
         try (BufferedReader input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
              PrintWriter output = new PrintWriter(new OutputStreamWriter(System.out, StandardCharsets.UTF_8), true)) {
             if (entries.isEmpty()) {
-                run(input, output, null, entries, plan.sync());
+                run(input, output, null, entries, plan.sync(), checkpoints);
                 return;
             }
 
@@ -56,7 +59,7 @@ public final class SyncControlMain {
             SyncRuntimeAssembler.SyncAssembly assembly = null;
             try {
                 assembly = SyncRuntimeAssembler.assembleEnabled(plan, schema, driver, neo4j);
-                run(input, output, assembly.syncService(), entries, plan.sync());
+                run(input, output, assembly.syncService(), entries, plan.sync(), checkpoints);
             } finally {
                 if (assembly != null) assembly.runtime().close();
                 driver.close();
@@ -65,11 +68,13 @@ public final class SyncControlMain {
     }
 
     static void run(BufferedReader input, PrintWriter output, SyncService syncService,
-                    List<SourceEntry> entries, SyncRuntimeConfig config) throws IOException {
+                    List<SourceEntry> entries, SyncRuntimeConfig config,
+                    PollingCheckpointStore checkpoints) throws IOException {
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(output, "output");
         Objects.requireNonNull(entries, "entries");
         Objects.requireNonNull(config, "config");
+        Objects.requireNonNull(checkpoints, "checkpoints");
         output.println("==== 知识图谱同步 ====");
         if (entries.isEmpty()) {
             output.println();
@@ -94,7 +99,7 @@ public final class SyncControlMain {
                     case "2" -> fullSync(input, output, syncService, entries);
                     case "3" -> resync(input, output, syncService, entries);
                     case "4" -> compensate(input, output, syncService, entries);
-                    case "5" -> showConfig(output, entries, config);
+                    case "5" -> showConfig(output, entries, config, checkpoints);
                     default -> output.println("编号无效，请重新选择。");
                 }
             } catch (RuntimeException ex) {
@@ -165,7 +170,8 @@ public final class SyncControlMain {
         output.println("补偿扫描完成：" + entry.identity());
     }
 
-    private static void showConfig(PrintWriter output, List<SourceEntry> entries, SyncRuntimeConfig config) {
+    private static void showConfig(PrintWriter output, List<SourceEntry> entries, SyncRuntimeConfig config,
+                                   PollingCheckpointStore checkpoints) {
         output.println("当前正式同步配置：");
         for (SourceEntry entry : entries) {
             output.println("  " + entry.sourceId() + " / " + entry.sourceObject() + " / " + entry.adapter()
@@ -173,7 +179,18 @@ public final class SyncControlMain {
         }
         output.println("polling 是否启用：" + (config.isPollingEnabled() ? "是" : "否"));
         output.println("polling 间隔秒数：" + config.getPollingInterval().toSeconds());
+        output.println("polling 回看秒数：" + config.getPollingLookback().toSeconds());
         output.println("polling scope 数量：" + config.getPollingScopes().size());
+        for (SyncRuntimeConfig.PollingScope scope : config.getPollingScopes()) {
+            output.println("polling scope：" + scope.sourceId() + " / " + scope.sourceObject());
+            var checkpoint = checkpoints.load(scope.sourceId(), scope.sourceObject());
+            if (checkpoint.isPresent()) {
+                output.println("  checkpoint：" + checkpoint.orElseThrow());
+            } else {
+                output.println("  checkpoint：尚未生成");
+                output.println("  initialWatermark：" + scope.initialWatermark());
+            }
+        }
     }
 
     private static SourceEntry choose(BufferedReader input, PrintWriter output, List<SourceEntry> entries,

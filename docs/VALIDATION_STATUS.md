@@ -6,7 +6,7 @@
 
 截至当前基线，已报告并通过：
 
-- Maven：124 tests，0 failures，0 errors，4 skipped，BUILD SUCCESS；
+- Maven：144 tests，0 failures，0 errors，4 skipped，BUILD SUCCESS；
 - Viewer：27/27 tests passed；
 - Viewer build：成功；
 - G6 正式浏览器 Gate：默认 G6、展开/收起、pin/unpin、标签模式通过，浏览器 console error 为 0；
@@ -40,9 +40,9 @@
 - TTL + 三 Sheet mapping 校验；
 - 稳定实体/关系 UID；
 - 同一实体多来源 contribution；
-- SourceRecord -> MappingResult 人工预览工具。
+- Excel/JDBC SourceRecord -> MappingResult 人工预览工具。
 
-两个 preview 工具当前都以 Excel 为主要支持范围；它们是开发核验工具，不代表真实 JDBC 连通验证。
+两个 preview 工具都支持 Excel/JDBC；它们是开发核验工具，不代表真实 Oracle 连通验证。
 
 ## 4. 当前同步验证
 
@@ -53,7 +53,12 @@
 - 全项目 fullRebuild；
 - compensateSince；
 - JDBC polling watermark 推进；
+- checkpoint JSON 持久化、重启恢复，以及 checkpoint 优先于 initialWatermark；
+- lookback 从 checkpoint 向前回看并允许重复 ChangeEvent；
+- 成功批次按最大 sourceTimestamp 推进，空扫描不按系统时间推进；
 - consumer / mapping / GraphStore 失败时 watermark 不错误推进；
+- checkpoint 保存失败时本轮失败且水位不推进；
+- checkpoint JSON 损坏明确失败，多 scope 保存互不覆盖；
 - JDBC 流式 iterator 在正常和异常路径关闭；
 - recent event cache 有界，失败事件可以重试；
 - 服务 sources 为空时进入 Query/API-only，不自动执行 fullRebuild。
@@ -84,8 +89,8 @@
 
 - 真实业务 Oracle 数据库版本、HOST/PORT/SERVICE_NAME、Schema、表/视图、业务键和 watermark 字段尚待确认，真实连通与长期生产运行尚未验证；
 - JDBC hard DELETE 自动发现；
-- watermark 持久化与重启续跑；
-- 同时间戳晚到记录完整处理；
+- 超出 lookback 窗口的极晚记录完整保障；
+- polling exactly-once；
 - RouteSegment-Airspace 真实空间拓扑与三维高度重叠；
 - 派生关系正式持久化/reconcile/ownership；
 - association runtime wiring 与 outward sink；

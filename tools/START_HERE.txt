@@ -440,13 +440,16 @@ ChangeQueryRuleRegistry + GraphChangeAssociationProjector 独立调用正确；�
        polling:
          enabled: true
          intervalSeconds: 30
+         lookbackSeconds: 5
          scopes:
            - sourceId: jdbc-main
              sourceObject: route-row
              initialWatermark: "2026-08-24T00:00:00Z"
 
    sourceId 必须等于 sources.yaml 的 sourceId；sourceObject 必须等于该 source 的 objects 键。
-   initialWatermark 必须是人工确认的 ISO-8601 UTC 起点，不能用“当前时间”猜。
+   initialWatermark 只在该 scope 尚无 checkpoint 的首次启动使用，必须是人工确认的
+   ISO-8601 UTC 起点，不能用“当前时间”猜。已有 checkpoint 时，重启优先从 checkpoint 继续。
+   lookbackSeconds 会从 checkpoint 向前回看，降低相同时间戳晚到记录被漏掉的风险。
    eventCarriesAuthoritativeData 必须保持 false；polling 只发现身份，SyncService 会 readByKey 回读。
 
 4. 执行：
@@ -454,17 +457,28 @@ ChangeQueryRuleRegistry + GraphChangeAssociationProjector 独立调用正确；�
      mvn.cmd -Dtest=SyncRuntimeConfigTest,SyncRuntimeAssemblerTest,JdbcPollingTriggerAdapterTest test
      tools\service.cmd
 
-正常：控制台显示 sync runtime configured; polling=true；数据库 T1 更新后只处理新 watermark，
-下一轮不重复旧记录。
+正常：控制台显示 sync runtime configured; polling=true；成功处理后生成
+runtime\state\polling-checkpoints.json。下一轮从 checkpoint 减去 lookback 后扫描，因此可能重复读取；
+这是预期的 at-least-once 行为，stable sourceKey/UID 和 replaceProjection 会吸收重复处理。
 
 失败：
 
   scope 不存在             → 对照 sources.yaml 的 sourceId/objects 键。
   未配置 watermarkField    → 在目标 JDBC object 增加该列名。
   initialWatermark 格式错  → 使用带 Z 的 Instant，例如 2026-08-24T00:00:00Z。
+  checkpoint无法读取       → 停止 service，先备份损坏文件，再删除后重新启动。
 
-watermark 只在当前进程内；重启从 initialWatermark 再开始。当前严格 WHERE watermark > ?，
-不发现 hard DELETE，也未解决同时间戳晚到和持久化。
+checkpoint 只在整轮 ChangeEvent 被 SyncService 成功处理后推进，值取成功源记录中的最大
+sourceTimestamp；空扫描、读取/Mapping/GraphStore/consumer/checkpoint写入失败都不推进。
+文件使用临时文件写完后再替换，实际 JSON 已由 .gitignore 排除，不提交源码仓。
+
+需要人工重扫时：先停止 service，备份后删除整个
+runtime\state\polling-checkpoints.json。下次启动时所有 scope 都回到各自 initialWatermark；
+这会产生重复扫描，但不会自动清图。不要在 service 运行时手改 JSON。
+
+当前 JdbcSourceAdapter 仍严格执行 WHERE watermark > ?；回看通过传入更早的 effectiveSince 实现，
+没有 Oracle 专用 SQL。有限 lookback 不能保证接住窗口以外的极晚记录，timestamp polling 也不发现
+hard DELETE。本实现是 at-least-once，不是 exactly-once。
 initialFullImport=true 不会在服务启动时自动 fullRebuild。
 
 
@@ -519,7 +533,8 @@ tools\sync.cmd 菜单：
     手工输入 ISO-8601 起始时间。JDBC 必须有 watermarkField；不解决 hard DELETE。
 
   “5. 查看当前同步配置”
-    只显示 sourceId/sourceObject/adapter/watermark/polling，不显示密码。
+    显示 sourceId/sourceObject/adapter/watermark、polling interval/lookback，以及每个 polling scope
+    当前 checkpoint；尚未生成时显示 initialWatermark。不显示密码、JDBC URL 或业务数据。
 
 
 任务 11：SourceRecord 已读到，但图里没有数据
@@ -692,8 +707,8 @@ KGEntityContribution 是内部技术节点，不能出现在 QueryService/GraphD
 以下均未实现，不是增加一个 YAML 字段即可启用：
 
   JDBC hard DELETE 自动发现
-  polling watermark 持久化
-  相同 watermark 时间戳晚到记录完整处理
+  超出 lookback 窗口的极晚记录完整保障
+  polling exactly-once
   RouteSegment ↔ Airspace 空间拓扑计算
   DerivedRelationPlugin 的 persistence/reconcile/ownership
   GraphChangeAssociationProjector 正式 runtime wiring/outward sink

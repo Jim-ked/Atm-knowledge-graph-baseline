@@ -7,6 +7,7 @@ import java.io.BufferedReader;
 import java.io.PrintWriter;
 import java.io.StringReader;
 import java.io.StringWriter;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -15,13 +16,16 @@ import java.util.List;
 import org.atmkg.core.model.ChangeEvent;
 import org.atmkg.core.model.SourceScope;
 import org.atmkg.core.spi.SyncService;
+import org.atmkg.infra.trigger.PollingCheckpointStore;
 import org.atmkg.service.sync.SyncRuntimeConfig;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class SyncControlMainTest {
     private static final List<SyncControlMain.SourceEntry> ENTRIES = List.of(
             new SyncControlMain.SourceEntry("excel-main", "route-row", "excel", false, true),
             new SyncControlMain.SourceEntry("jdbc-main", "airport-base", "jdbc", true, true));
+    @TempDir Path temp;
 
     @Test
     void emptyFormalSourcesShowClearMessageAndExitWithoutSyncService() throws Exception {
@@ -66,15 +70,63 @@ class SyncControlMainTest {
         assertEquals("jdbc-main/airport-base/ZBAA", sync.resyncRef);
         assertEquals("jdbc-main/airport-base@2026-08-23T00:00:00Z", sync.compensation);
         assertTrue(output.contains("polling 是否启用"));
+        assertTrue(output.contains("polling 回看秒数：5"));
         assertTrue(output.contains("jdbc-main / airport-base / jdbc / watermark=是"));
     }
 
-    private static String run(String input, SyncService sync,
-                              List<SyncControlMain.SourceEntry> entries) throws Exception {
+    @Test
+    void configViewShowsPersistedCheckpointOrFirstRunInitialWatermark() throws Exception {
+        SyncRuntimeConfig config = pollingConfig();
+        PollingCheckpointStore checkpoints = checkpointStore();
+
+        String firstRun = run("5\n0\n", new RecordingSync(), ENTRIES, config, checkpoints);
+
+        assertTrue(firstRun.contains("jdbc-main / airport-base"));
+        assertTrue(firstRun.contains("checkpoint：尚未生成"));
+        assertTrue(firstRun.contains("initialWatermark：2026-08-23T00:00:00Z"));
+
+        checkpoints.save("jdbc-main", "airport-base", Instant.parse("2026-08-24T10:20:30Z"));
+        String resumed = run("5\n0\n", new RecordingSync(), ENTRIES, config, checkpoints);
+
+        assertTrue(resumed.contains("checkpoint：2026-08-24T10:20:30Z"));
+    }
+
+    private String run(String input, SyncService sync,
+                       List<SyncControlMain.SourceEntry> entries) throws Exception {
+        return run(input, sync, entries, SyncRuntimeConfig.load(Path.of("config/sync.yaml")), checkpointStore());
+    }
+
+    private static String run(String input, SyncService sync, List<SyncControlMain.SourceEntry> entries,
+                              SyncRuntimeConfig config, PollingCheckpointStore checkpoints) throws Exception {
         StringWriter text = new StringWriter();
         SyncControlMain.run(new BufferedReader(new StringReader(input)), new PrintWriter(text, true),
-                sync, entries, SyncRuntimeConfig.load(Path.of("config/sync.yaml")));
+                sync, entries, config, checkpoints);
         return text.toString();
+    }
+
+    private SyncRuntimeConfig pollingConfig() throws Exception {
+        Path file = temp.resolve("sync.yaml");
+        Files.writeString(file, """
+                sync:
+                  initialFullImport: true
+                  incremental: true
+                  compensation: true
+                  manualResync: true
+                  eventCarriesAuthoritativeData: false
+                  polling:
+                    enabled: true
+                    intervalSeconds: 10
+                    lookbackSeconds: 5
+                    scopes:
+                      - sourceId: jdbc-main
+                        sourceObject: airport-base
+                        initialWatermark: '2026-08-23T00:00:00Z'
+                """);
+        return SyncRuntimeConfig.load(file);
+    }
+
+    private PollingCheckpointStore checkpointStore() {
+        return new PollingCheckpointStore(temp.resolve("runtime/state/polling-checkpoints.json"));
     }
 
     private static final class RecordingSync implements SyncService {

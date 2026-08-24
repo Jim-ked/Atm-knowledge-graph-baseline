@@ -85,11 +85,19 @@ mapping/字段映射.xlsx
 - `fullSync`：同步单个 sourceObject，不清空整个项目图；
 - `fullRebuild`：先清当前项目图，再按全部正式 sourceObject 重建；
 - `compensateSince`：从指定时间做变更补偿扫描；
-- JDBC polling：按配置 scope 周期发现 `watermark > 当前值` 的 UPSERT 变化。
+- JDBC polling：按配置 scope 周期发现 `watermark > effectiveSince` 的 UPSERT 变化；
+  `effectiveSince = checkpoint - lookback`。
 
 `fullRebuild` 是显式人工危险操作，服务启动不会因 `initialFullImport=true` 自动执行清图。
 
-当前 polling watermark 只保存在进程内；重启后从 `sync.yaml` 的 `initialWatermark` 重新开始。timestamp polling 不自动发现 hard DELETE，也未解决相同时间戳晚到记录。
+polling checkpoint 持久化在 `runtime/state/polling-checkpoints.json`。启动时已有有效 checkpoint
+优先于 `sync.yaml` 的 `initialWatermark`；initialWatermark 只用于该 scope 首次运行。整轮记录和
+ChangeEvent consumer 成功后，以本轮最大 `SourceRecord.sourceTimestamp` 原子保存并推进；空扫描或任一
+读取、同步、写 checkpoint 失败都不推进。JSON 损坏会明确启动/读取失败，不会静默回退。
+
+polling 采用 at-least-once：lookback 会重复扫描部分记录，由 stable sourceKey、stable UID 和
+replaceProjection 吸收，不提供 exactly-once。有限 lookback 只能降低同时间戳/短时晚到漏读风险；
+timestamp polling 仍不自动发现 hard DELETE，也不能保证窗口以外的极晚记录。
 
 事件重复抑制只使用有界进程内 recent-event cache，不提供 exactly-once 保证。
 
