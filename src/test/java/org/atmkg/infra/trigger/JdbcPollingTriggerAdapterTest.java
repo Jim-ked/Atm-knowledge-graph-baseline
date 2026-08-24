@@ -245,6 +245,36 @@ class JdbcPollingTriggerAdapterTest {
     }
 
     @Test
+    void pollingGraphChangeFailureDoesNotAdvanceCheckpointAndRetriesTheProjection() {
+        FakeJdbcSource source = new FakeJdbcSource();
+        source.discovered.put("airport-base", List.of(record("airport-base", "ZBAA", "scan-old", T1)));
+        source.authoritative.put("airport-base/ZBAA", record("airport-base", "ZBAA", "北京首都", T1));
+        RecordingStore store = new RecordingStore();
+        AtomicBoolean failFirstGraphChange = new AtomicBoolean(true);
+        List<GraphChangeNotice> delivered = new ArrayList<>();
+        DefaultSyncService sync = new DefaultSyncService(Map.of("jdbc-main", source), record ->
+                new MappingResult(List.of(new GraphEntity("airport:ZBAA", "urn:test:Airport", "北京首都",
+                        Map.of(), Map.of())), List.of()), store, notice -> {
+                            if (failFirstGraphChange.getAndSet(false)) {
+                                throw new IllegalStateException("simulated GraphChange failure");
+                            }
+                            delivered.add(notice);
+                        });
+        JdbcPollingTriggerAdapter trigger = trigger(source,
+                List.of(new JdbcPollingTriggerAdapter.PollingScope("jdbc-main", "airport-base", T0)));
+
+        assertThrows(IllegalStateException.class, () -> trigger.pollOnce(sync::handle));
+        assertEquals(T0, trigger.watermark("jdbc-main", "airport-base"));
+        assertTrue(checkpointStore().load("jdbc-main", "airport-base").isEmpty());
+
+        trigger.pollOnce(sync::handle);
+
+        assertEquals(T1, trigger.watermark("jdbc-main", "airport-base"));
+        assertEquals(2, store.replaceCount);
+        assertEquals(1, delivered.size());
+    }
+
+    @Test
     void rejectsDiscoveryWithoutStrictlyNewSourceTimestamp() {
         FakeJdbcSource source = new FakeJdbcSource();
         source.discovered.put("airport-base", List.of(record("airport-base", "ZBAA", "airport", null)));

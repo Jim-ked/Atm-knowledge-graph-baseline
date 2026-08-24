@@ -1,8 +1,10 @@
 package org.atmkg.tools;
 
+import java.io.PrintStream;
 import java.nio.file.Path;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 import org.atmkg.api.http.ApiConfig;
 import org.atmkg.api.http.KgApiServer;
 import org.atmkg.core.ProjectConstants;
@@ -11,8 +13,14 @@ import org.atmkg.infra.neo4j.Neo4jConnectionSettings;
 import org.atmkg.infra.neo4j.Neo4jDriverFactory;
 import org.atmkg.infra.ontology.JenaOntologyService;
 import org.atmkg.infra.query.Neo4jQueryService;
+import org.atmkg.service.change.ChangeQueryRuleRegistry;
+import org.atmkg.service.change.GraphChangeAssociationProjector;
+import org.atmkg.service.change.GraphChangeConsoleReporter;
+import org.atmkg.service.change.GraphChangeNeighborhoodProjector;
+import org.atmkg.service.change.GraphChangeProcessor;
 import org.atmkg.service.query.QueryTemplateRegistry;
 import org.atmkg.service.query.TemplateAwareQueryService;
+import org.atmkg.service.sync.GraphChangeNotice;
 import org.atmkg.service.sync.SyncRuntime;
 import org.neo4j.driver.Driver;
 
@@ -21,10 +29,9 @@ import org.neo4j.driver.Driver;
  * {@code ontology/atm_knowledge_graph.ttl + mapping/字段映射.xlsx}，新增 named query 去
  * {@code queries/query-templates.yaml}；这些需求都不应修改本类。
  *
- * <p>本类固定加载 {@code config/api.yaml}、正式 TTL 和 {@code queries/query-templates.yaml}，再装配
- * HTTP/Viewer/SyncRuntime。只有要正式接入新的进程级组件、改变这些固定路径或修复资源关闭顺序才写 Java。
- * 误把 sources.local/fixture 或 GraphChangeAssociationProjector 接进来会改变生产入口；后者当前没有
- * outward sink。启动失败先看控制台发生在 Driver、SyncRuntimeAssembler 还是 server.start。
+ * <p>本类固定加载 API、正式 TTL、query templates 和 change-query-rules，再装配 QueryService、GraphChange、
+ * HTTP/Viewer/SyncRuntime。GraphChange 当前只把简短摘要写到控制台，不是 durable sink；人工 sync.cmd 也不走
+ * 这条变化输出链。启动失败先看控制台发生在规则加载、Driver、SyncRuntimeAssembler 还是 server.start。
  */
 public final class KgServiceMain {
     private KgServiceMain() {}
@@ -45,7 +52,8 @@ public final class KgServiceMain {
         SyncRuntime syncRuntime;
         KgApiServer server;
         try {
-            syncRuntime = SyncRuntimeAssembler.assemble(root, schema, driver, neo4j);
+            Consumer<GraphChangeNotice> graphChange = graphChangeListener(root, queryService, System.out);
+            syncRuntime = SyncRuntimeAssembler.assemble(root, schema, driver, neo4j, graphChange);
             server = new KgApiServer(api, queryService, schema, () -> {
                 try {
                     driver.verifyConnectivity();
@@ -99,5 +107,15 @@ public final class KgServiceMain {
             Thread.currentThread().interrupt();
             close.run();
         }
+    }
+
+    static Consumer<GraphChangeNotice> graphChangeListener(Path root, QueryService queryService,
+                                                           PrintStream output) {
+        ChangeQueryRuleRegistry rules = ChangeQueryRuleRegistry.load(
+                root.resolve("queries/change-query-rules.yaml"));
+        return new GraphChangeProcessor(
+                new GraphChangeNeighborhoodProjector(queryService),
+                new GraphChangeAssociationProjector(queryService, rules),
+                new GraphChangeConsoleReporter(output));
     }
 }

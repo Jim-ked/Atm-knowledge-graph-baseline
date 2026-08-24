@@ -20,8 +20,8 @@ import java.util.Set;
  * {@code GraphNodeDTO.kind} 取值，右侧 queryId 必须先存在于 {@code queries/query-templates.yaml}。
  *
  * <p>只有这张 kind→queryId 表的严格解析机制有 bug 才写 Java；不要加入 sourceId/table 条件 DSL。
- * 加规则后 service.cmd 没反应是当前预期：KgServiceMain/SyncRuntime 尚未加载 Registry，也没有 outward sink。
- * 先运行 ChangeQueryRuleRegistryTest/GraphChangeAssociationProjectorTest 验证独立链。
+ * KgServiceMain 会在正式启动时加载本 Registry，配置缺失或非法必须启动失败；当前结果只输出控制台摘要，
+ * 没有 durable outward sink。
  */
 public final class ChangeQueryRuleRegistry {
     private static final Set<String> ROOT_FIELDS = Set.of("associations");

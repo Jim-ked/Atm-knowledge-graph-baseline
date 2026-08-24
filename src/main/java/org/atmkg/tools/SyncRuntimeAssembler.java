@@ -6,9 +6,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Consumer;
 import org.atmkg.core.ProjectConstants;
 import org.atmkg.core.model.OntologySchema;
 import org.atmkg.core.model.mapping.MappingCatalog;
+import org.atmkg.core.spi.GraphStore;
+import org.atmkg.core.spi.MappingEngine;
 import org.atmkg.core.spi.SourceAdapter;
 import org.atmkg.core.spi.SyncService;
 import org.atmkg.infra.identity.DeterministicIdentityResolver;
@@ -22,6 +25,7 @@ import org.atmkg.infra.source.config.SourceConfig;
 import org.atmkg.infra.trigger.JdbcPollingTriggerAdapter;
 import org.atmkg.infra.trigger.PollingCheckpointStore;
 import org.atmkg.service.sync.DefaultSyncService;
+import org.atmkg.service.sync.GraphChangeNotice;
 import org.atmkg.service.sync.SyncRuntime;
 import org.atmkg.service.sync.SyncRuntimeConfig;
 import org.neo4j.driver.Driver;
@@ -31,7 +35,8 @@ import org.neo4j.driver.Driver;
  * JDBC 表去 {@code config/sources.yaml}，polling scope 去 {@code config/sync.yaml}，字段和关系去
  * {@code mapping/字段映射.xlsx}，不要为这些需求增加 switch 分支。
  *
- * <p>当前固定读取正式 sources/sync、正式 mapping，按 adapter=excel|jdbc 创建实现并可创建 polling。
+ * <p>当前固定读取正式 sources/sync、正式 mapping，按 adapter=excel|jdbc 创建实现并可创建 polling；上层正式
+ * 服务可注入 GraphChange notice listener，旧重载继续供不需要变化输出的人工工具使用。
  * 误加载 sources.local.yaml/fixture mapping 会把开发数据带进服务；把 initialFullImport 当自动 fullRebuild
  * 会造成启动清图。配置失败先查 sourceId/objects、polling scope 和 watermarkField，再查本类 validate。
  */
@@ -42,9 +47,16 @@ final class SyncRuntimeAssembler {
 
     static SyncRuntime assemble(Path projectRoot, OntologySchema schema, Driver driver,
                                 Neo4jConnectionSettings neo4j) {
+        return assemble(projectRoot, schema, driver, neo4j, notice -> {});
+    }
+
+    static SyncRuntime assemble(Path projectRoot, OntologySchema schema, Driver driver,
+                                Neo4jConnectionSettings neo4j,
+                                Consumer<GraphChangeNotice> noticeListener) {
+        Objects.requireNonNull(noticeListener, "noticeListener");
         AssemblyPlan plan = plan(projectRoot);
         if (plan.sources().getSources().isEmpty()) return SyncRuntime.disabled();
-        return assembleEnabled(plan, schema, driver, neo4j).runtime();
+        return assembleEnabled(plan, schema, driver, neo4j, noticeListener).runtime();
     }
 
     static SyncRuntime assemble(Path projectRoot, EnabledRuntimeFactory enabledFactory) {
@@ -102,9 +114,16 @@ final class SyncRuntimeAssembler {
 
     static SyncAssembly assembleEnabled(AssemblyPlan plan, OntologySchema schema, Driver driver,
                                         Neo4jConnectionSettings neo4j) {
+        return assembleEnabled(plan, schema, driver, neo4j, notice -> {});
+    }
+
+    static SyncAssembly assembleEnabled(AssemblyPlan plan, OntologySchema schema, Driver driver,
+                                        Neo4jConnectionSettings neo4j,
+                                        Consumer<GraphChangeNotice> noticeListener) {
         Objects.requireNonNull(schema, "schema");
         Objects.requireNonNull(driver, "driver");
         Objects.requireNonNull(neo4j, "neo4j");
+        Objects.requireNonNull(noticeListener, "noticeListener");
 
         // 1. 根据正式 sources 配置创建物理数据源 Adapter。
         Map<String, SourceAdapter> adapters = new LinkedHashMap<>();
@@ -120,7 +139,7 @@ final class SyncRuntimeAssembler {
                 new DeterministicIdentityResolver(ProjectConstants.IDENTITY_NAMESPACE));
         Neo4jGraphStore store = new Neo4jGraphStore(driver, neo4j, schema);
         store.initializeSchema();
-        DefaultSyncService syncService = new DefaultSyncService(adapters, mapping, store);
+        DefaultSyncService syncService = syncService(adapters, mapping, store, noticeListener);
         if (!plan.sync().isPollingEnabled()) {
             return new SyncAssembly(syncService, SyncRuntime.enabled(syncService));
         }
@@ -134,6 +153,11 @@ final class SyncRuntimeAssembler {
                 adapters, scopes, plan.sync().getPollingInterval(), plan.sync().getPollingLookback(),
                 new PollingCheckpointStore(plan.root().resolve(PollingCheckpointStore.DEFAULT_RELATIVE_PATH)));
         return new SyncAssembly(syncService, SyncRuntime.enabled(syncService, polling));
+    }
+
+    static DefaultSyncService syncService(Map<String, SourceAdapter> adapters, MappingEngine mapping,
+                                          GraphStore store, Consumer<GraphChangeNotice> noticeListener) {
+        return new DefaultSyncService(adapters, mapping, store, noticeListener);
     }
 
     record AssemblyPlan(Path root, SourceConfig sources, SyncRuntimeConfig sync) {}
