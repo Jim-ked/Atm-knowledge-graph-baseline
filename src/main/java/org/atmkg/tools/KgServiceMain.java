@@ -13,6 +13,7 @@ import org.atmkg.infra.neo4j.Neo4jConnectionSettings;
 import org.atmkg.infra.neo4j.Neo4jDriverFactory;
 import org.atmkg.infra.ontology.JenaOntologyService;
 import org.atmkg.infra.query.Neo4jQueryService;
+import org.atmkg.infra.query.Neo4jEntityLookupService;
 import org.atmkg.infra.query.ReadOnlyCypherExecutor;
 import org.atmkg.service.change.ChangeQueryRuleRegistry;
 import org.atmkg.service.change.GraphChangeAssociationProjector;
@@ -52,12 +53,14 @@ public final class KgServiceMain {
                 new Neo4jQueryService(driver, neo4j, api.getSchemaVersion()), queryTemplates);
         ReadOnlyCypherExecutor cypherExecutor = new ReadOnlyCypherExecutor(
                 driver, neo4j, api.getSchemaVersion(), api.getMaxResultNodes(), api.getMaxResultRelationships());
+        Neo4jEntityLookupService entityLookupService = new Neo4jEntityLookupService(
+                driver, neo4j, api.getSchemaVersion());
         SyncRuntime syncRuntime;
         KgApiServer server;
         try {
             Consumer<GraphChangeNotice> graphChange = graphChangeListener(root, queryService, System.out);
             syncRuntime = SyncRuntimeAssembler.assemble(root, schema, driver, neo4j, graphChange);
-                server = new KgApiServer(api, queryService, cypherExecutor, schema, () -> {
+            server = new KgApiServer(api, queryService, entityLookupService, cypherExecutor, schema, () -> {
                 try {
                     driver.verifyConnectivity();
                     return true;

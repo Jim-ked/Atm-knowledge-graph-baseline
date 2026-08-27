@@ -22,10 +22,12 @@ basePath: /api/v1
 GET  /api/v1/health
 GET  /api/v1/schema
 GET  /api/v1/entities/{uid}
+POST /api/v1/entities/lookup
 POST /api/v1/graph/one-hop
 POST /api/v1/graph/k-hop
 POST /api/v1/graph/path
 POST /api/v1/graph/query
+POST /api/v1/graph/named
 POST /api/v1/graph/cypher
 ```
 
@@ -38,9 +40,13 @@ K_HOP
 PATH
 ```
 
-`NAMED` query 尚未开放 HTTP API。named query 目前由内部 `TemplateAwareQueryService` / association 组件使用。
+`/entities/lookup` 只接受 `{ "key": "ZBAA" }` 或额外提供可选 `classIri`。它按当前 project 的 canonical `KGEntity.kg_caption` 做大小写不敏感的精确业务键匹配，不做 contains、全文搜索、Class 猜测、fallback 或输入改写；返回 GraphDTO，空结果是 200，超过 50 项显式返回 `RESULT_TOO_LARGE`。内部 ENTITY / NEIGHBORS / K_HOP / PATH 仍严格使用稳定 UID。
 
-`/graph/cypher` 只接受 `{ "cypher": "MATCH ... RETURN ..." }`。服务端先执行 Neo4j 官方 `EXPLAIN`，仅当 `ResultSummary.queryType()` 为 `QueryType.READ_ONLY` 时才执行原查询，并额外使用 `AccessMode.READ` 会话。输入 `EXPLAIN`/`PROFILE` 会明确拒绝；该入口不接受 params、raw 查询模板或写操作。
+`/graph/named` 只接受 `{ "queryId": "...", "startUid": "..." }`，构造已有 `QuerySpec.Type.NAMED` 后继续交给 `TemplateAwareQueryService` / `QueryTemplateRegistry`，不接受 raw Cypher。
+
+`/graph/cypher` 只接受 `{ "cypher": "MATCH ... RETURN ..." }`。服务端先执行 Neo4j 官方 `EXPLAIN`，仅当 `ResultSummary.queryType()` 为 `QueryType.READ_ONLY` 时才执行原查询，并额外使用 `AccessMode.READ` 会话。输入 `EXPLAIN`/`PROFILE` 会明确拒绝；该入口不接受 params、raw 查询模板或写操作。响应为 `CypherResultDTO`：`schemaVersion`、有序 `columns`、JSON-safe `rows`、`graph` 和 `meta`。标量/表格查询正常返回 rows 和空 GraphDTO；Node、Relationship、Path 及其 List/Map 嵌套值会同时进入 rows，并在满足 canonical 图投影条件时进入 graph。表格超过固定 1000 行会显式返回 `RESULT_TOO_LARGE`，不静默截断。
+
+`/schema` 保留 `schemaVersion`、`classes`、`objectProperties`，并增加 `datatypeProperties`、`classLabels`、`datatypePropertyLabels`、`objectPropertyLabels`。label 缺失时统一回退为 IRI localName。
 
 ## 3. GraphDTO
 
@@ -74,7 +80,7 @@ GraphDTO 不暴露 Neo4j internal id / elementId，也不加入 G6 或其他 Vie
 - NEIGHBORS：完整一跳，可限制关系类型、类过滤和方向；
 - K_HOP：在给定深度内返回到达节点和这些节点间原图关系的完整诱导子图；
 - PATH：查询两实体之间路径；
-- NAMED：由外置 query template 展开为受控 QuerySpec，目前不直接通过 HTTP 暴露。
+- NAMED：由外置 query template 展开为受控 QuerySpec，通过独立 `/graph/named` HTTP 入口调用。
 
 不得通过 top-N、随机采样或静默 LIMIT 改变完整查询语义。结果超过 `config/api.yaml` 中节点/关系上限时返回显式 `RESULT_TOO_LARGE`，而不是截断。
 
@@ -96,13 +102,12 @@ health 返回 Neo4j 可用性；当 Neo4j 不可用时服务返回 `DEGRADED`。
 
 当前 HTTP API 不直接提供：
 
-- NAMED query；
 - ChangeEvent 写入端点；
 - sync/fullRebuild/resync 管理端点；
 - association outward sink；
 - 空间推理端点。
 
-Viewer Cypher 必须返回节点/关系/路径图元素；scalar-only 结果返回 `CYPHER_NO_GRAPH_RESULT`。仅保留带 `KGEntity`、当前 `kg_project` 和稳定 `kg_uid` 的正式节点，关系必须能解析到两个正式节点并带稳定 `kg_uid`；贡献节点、其它 project、Neo4j internal id/elementId 均不会进入 GraphDTO。结果由用户在 Cypher 中的 `LIMIT` 与服务端配置硬上限共同控制，超限显式返回 `RESULT_TOO_LARGE`，不静默截断。
+Viewer Cypher 允许标量、表格和图结果在一次执行中同时返回。graph 仅保留带 `KGEntity`、当前 `kg_project` 和稳定 `kg_uid` 的正式节点；关系必须能解析到两个已返回的正式节点并带稳定 `kg_uid`。贡献节点、其它 project、Neo4j internal id/elementId 均不会进入 GraphDTO；仅返回关系但未返回端点时 rows 正常，graph 不强造端点。结果由固定 1000 行表格上限、用户 Cypher 中的 `LIMIT` 与服务端节点/关系硬上限共同控制，超限显式返回 `RESULT_TOO_LARGE`，不静默截断。
 
 同步控制目前通过内部运行时、polling 和 `tools/sync.cmd` 完成，不应把历史文档中“HTTP 必须暴露 ChangeEvent/resync”继续当成当前已实现契约。
 

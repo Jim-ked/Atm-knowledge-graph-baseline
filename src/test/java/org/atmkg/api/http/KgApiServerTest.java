@@ -2,7 +2,6 @@ package org.atmkg.api.http;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -19,12 +18,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.atmkg.core.error.QueryExecutionException;
+import org.atmkg.core.model.CypherResultDTO;
 import org.atmkg.core.model.GraphDTO;
 import org.atmkg.core.model.GraphNodeDTO;
 import org.atmkg.core.model.GraphRelationshipDTO;
 import org.atmkg.core.model.OntologySchema;
 import org.atmkg.core.model.OntologyTerm;
 import org.atmkg.core.model.QuerySpec;
+import org.atmkg.core.spi.EntityLookupService;
 import org.atmkg.core.spi.QueryService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,6 +37,7 @@ class KgApiServerTest {
     private static final String UID = "urn:test:node%2F1";
 
     private RecordingQueryService queryService;
+    private RecordingEntityLookupService entityLookupService;
     private KgApiServer server;
     private HttpClient client;
     private URI baseUri;
@@ -46,7 +48,9 @@ class KgApiServerTest {
     @BeforeEach
     void startServer() {
         queryService = new RecordingQueryService();
-        server = new KgApiServer(config(100, 100), queryService, schema(), () -> true);
+        entityLookupService = new RecordingEntityLookupService();
+        server = new KgApiServer(
+                config(100, 100), queryService, entityLookupService, null, schema(), () -> true);
         server.start();
         client = HttpClient.newHttpClient();
         baseUri = URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/api/v1");
@@ -91,6 +95,23 @@ class KgApiServerTest {
         assertEquals(QuerySpec.Type.ENTITY, queryService.lastSpec.getType());
         assertEquals(404, missing.statusCode());
         assertEquals("ENTITY_NOT_FOUND", json(missing).get("code").asText());
+    }
+
+    @Test
+    void entityLookupAcceptsBusinessKeyWithOptionalClassAndEmptyResultIsNotAnError() throws Exception {
+        HttpResponse<String> allClasses = post("/entities/lookup", "{\"key\":\"ZBAA\"}");
+        HttpResponse<String> missing = post("/entities/lookup", "{\"key\":\"missing\"}");
+        HttpResponse<String> oneClass = post("/entities/lookup",
+                "{\"key\":\"ZBAA\",\"classIri\":\"urn:test:Airport\"}");
+        HttpResponse<String> unknown = post("/entities/lookup", "{\"key\":\"ZBAA\",\"uid\":\"wrong\"}");
+
+        assertEquals(200, allClasses.statusCode());
+        assertEquals("ZBAA", json(allClasses).get("nodes").get(0).get("caption").asText());
+        assertEquals(200, oneClass.statusCode());
+        assertEquals("urn:test:Airport", entityLookupService.lastClassIri);
+        assertEquals(200, missing.statusCode());
+        assertEquals(0, json(missing).get("nodes").size());
+        assertEquals(400, unknown.statusCode());
     }
 
     @Test
@@ -145,22 +166,30 @@ class KgApiServerTest {
     }
 
     @Test
-    void unifiedQueryDoesNotExposeNamedTemplatesOverHttp() throws Exception {
-        HttpResponse<String> response = post("/graph/query",
-                "{\"type\":\"NAMED\",\"startUid\":\"start\"}");
+    void namedEndpointBuildsExistingNamedQuerySpecAndRejectsUnknownFields() throws Exception {
+        HttpResponse<String> response = post("/graph/named",
+                "{\"queryId\":\"route-two-hop\",\"startUid\":\"start\"}");
+        HttpResponse<String> unknown = post("/graph/named",
+                "{\"queryId\":\"route-two-hop\",\"startUid\":\"start\",\"cypher\":\"RETURN 1\"}");
 
-        assertEquals(400, response.statusCode());
-        assertEquals("INVALID_REQUEST", json(response).get("code").asText());
-        assertNull(queryService.lastSpec);
+        assertEquals(200, response.statusCode());
+        assertEquals(QuerySpec.Type.NAMED, queryService.lastSpec.getType());
+        assertEquals("route-two-hop", queryService.lastSpec.getQueryId());
+        assertEquals("start", queryService.lastSpec.getStartUid());
+        assertEquals(400, unknown.statusCode());
     }
 
     @Test
-    void cypherEndpointAcceptsOnlyCypherFieldAndReturnsGraphDto() throws Exception {
+    void cypherEndpointAcceptsOnlyCypherFieldAndReturnsRowsPlusGraph() throws Exception {
         server.close();
         GraphDTO graph = new GraphDTO("1",
                 List.of(new GraphNodeDTO("stable-1", List.of("Airport"), "Airport", "A", Map.of("name", "A"))),
                 List.of(), Map.of("queryType", "CYPHER", "complete", true));
-        server = new KgApiServer(config(100, 100), queryService, cypher -> graph, schema(), () -> true);
+        CypherResultDTO result = new CypherResultDTO("1", List.of("total"),
+                List.of(Map.of("total", 1L)), graph,
+                Map.of("queryType", "CYPHER", "rowCount", 1, "nodeCount", 1,
+                        "relationshipCount", 0, "complete", true));
+        server = new KgApiServer(config(100, 100), queryService, cypher -> result, schema(), () -> true);
         server.start();
         baseUri = URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/api/v1");
 
@@ -168,7 +197,9 @@ class KgApiServerTest {
         HttpResponse<String> unknown = post("/graph/cypher", "{\"cypher\":\"MATCH (n) RETURN n\",\"params\":{}}");
 
         assertEquals(200, response.statusCode());
-        assertEquals("stable-1", json(response).get("nodes").get(0).get("id").asText());
+        assertEquals(List.of("total"), JSON.convertValue(json(response).get("columns"), List.class));
+        assertEquals(1L, json(response).get("rows").get(0).get("total").asLong());
+        assertEquals("stable-1", json(response).get("graph").get("nodes").get(0).get("id").asText());
         assertEquals(400, unknown.statusCode());
         assertEquals("INVALID_REQUEST", json(unknown).get("code").asText());
     }
@@ -180,7 +211,12 @@ class KgApiServerTest {
         assertEquals(200, response.statusCode());
         assertEquals("1", json(response).get("schemaVersion").asText());
         assertEquals("urn:test:Class", json(response).get("classes").get(0).asText());
+        assertTrue(json(response).get("datatypeProperties").toString().contains("urn:test:name"));
         assertEquals("urn:test:rel", json(response).get("objectProperties").get(0).asText());
+        assertEquals("测试类", json(response).get("classLabels").get("urn:test:Class").asText());
+        assertEquals("名称", json(response).get("datatypePropertyLabels").get("urn:test:name").asText());
+        assertEquals("noLabel", json(response).get("datatypePropertyLabels").get("urn:test:noLabel").asText());
+        assertEquals("关系", json(response).get("objectPropertyLabels").get("urn:test:rel").asText());
     }
 
     @Test
@@ -248,10 +284,15 @@ class KgApiServerTest {
     }
 
     private OntologySchema schema() {
-        OntologyTerm clazz = new OntologyTerm("urn:test:Class", "Class", Set.of(), Set.of(), Set.of());
+        OntologyTerm clazz = new OntologyTerm("urn:test:Class", "测试类", Set.of(), Set.of(), Set.of());
+        OntologyTerm name = new OntologyTerm(
+                "urn:test:name", "名称", Set.of("urn:test:Class"), Set.of(), Set.of());
+        OntologyTerm noLabel = new OntologyTerm(
+                "urn:test:noLabel", null, Set.of("urn:test:Class"), Set.of(), Set.of());
         OntologyTerm relationship = new OntologyTerm(
-                "urn:test:rel", "rel", Set.of("urn:test:Class"), Set.of("urn:test:Class"), Set.of());
-        return new OntologySchema(Map.of(clazz.getIri(), clazz), Map.of(), Map.of(relationship.getIri(), relationship));
+                "urn:test:rel", "关系", Set.of("urn:test:Class"), Set.of("urn:test:Class"), Set.of());
+        return new OntologySchema(Map.of(clazz.getIri(), clazz),
+                Map.of(name.getIri(), name, noLabel.getIri(), noLabel), Map.of(relationship.getIri(), relationship));
     }
 
     private HttpResponse<String> get(String path) throws Exception {
@@ -297,6 +338,23 @@ class KgApiServerTest {
             return new GraphDTO("1", nodes, relationships,
                     Map.of("queryType", spec.getType().name(), "nodeCount", nodes.size(),
                             "relationshipCount", relationships.size(), "complete", true));
+        }
+    }
+
+    private static final class RecordingEntityLookupService implements EntityLookupService {
+        String lastKey;
+        String lastClassIri;
+
+        @Override
+        public GraphDTO lookup(String key, String classIri) {
+            lastKey = key;
+            lastClassIri = classIri;
+            List<GraphNodeDTO> nodes = "missing".equals(key)
+                    ? List.of()
+                    : List.of(new GraphNodeDTO("uid-" + key, List.of("Airport"), "Airport", key, Map.of()));
+            return new GraphDTO("1", nodes, List.of(), Map.of(
+                    "queryType", "ENTITY_LOOKUP", "nodeCount", nodes.size(),
+                    "relationshipCount", 0, "complete", true));
         }
     }
 }

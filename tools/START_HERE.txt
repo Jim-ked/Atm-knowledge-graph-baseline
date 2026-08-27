@@ -812,11 +812,13 @@ KGEntityContribution 是内部技术节点，不能出现在 QueryService/GraphD
   tools\review.cmd
     只读 Neo4j，显示图/数据结果和 Browser-ready Cypher；不依赖 sources.yaml。
 
-  Viewer Cypher
-    正式 Viewer 顶部可输入单条只读 Cypher，POST /api/v1/graph/cypher 返回同一 GraphDTO。
+  只读 Cypher 后端
+    POST /api/v1/graph/cypher 返回 CypherResultDTO：
+    有序 columns、JSON-safe rows、GraphDTO graph 和 meta；标量/表格查询的 graph 可以为空。
     服务端先用 Neo4j EXPLAIN + QueryType.READ_ONLY 判定，再以 AccessMode.READ 执行；
-    不接受 EXPLAIN/PROFILE、params、写查询或 scalar-only 结果。节点规模由 Cypher 的 LIMIT
-    与 config/api.yaml 服务端硬上限共同控制，页面没有节点数量下拉框。
+    不接受 EXPLAIN/PROFILE、params 或写查询。表格固定最多 1000 行；节点/关系规模由 Cypher
+    的 LIMIT 与 config/api.yaml 服务端硬上限共同控制，超限均显式失败。
+    本轮未修改 Viewer；Table/Raw/Graph 的前端适配后续单独开发。
 
 
 任务 16：遇到这些需求不要找“开关”

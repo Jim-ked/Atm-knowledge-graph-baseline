@@ -28,6 +28,8 @@ import org.atmkg.infra.neo4j.Neo4jDriverFactory;
 import org.atmkg.infra.neo4j.Neo4jGraphStore;
 import org.atmkg.infra.ontology.JenaOntologyService;
 import org.atmkg.infra.query.Neo4jQueryService;
+import org.atmkg.infra.query.Neo4jEntityLookupService;
+import org.atmkg.infra.query.ReadOnlyCypherExecutor;
 import org.atmkg.service.sync.DefaultSyncService;
 import org.neo4j.driver.Driver;
 
@@ -76,7 +78,11 @@ public final class Phase4Neo4jApiCheckMain {
             ApiConfig api = new ApiConfig("127.0.0.1", 0, "/api/v1", "1", 8,
                     65536, 10000, 50000);
             Neo4jQueryService query = new Neo4jQueryService(driver, neo4j, api.getSchemaVersion());
-            try (KgApiServer server = new KgApiServer(api, query, schema, () -> {
+            Neo4jEntityLookupService entityLookup = new Neo4jEntityLookupService(
+                    driver, neo4j, api.getSchemaVersion());
+            ReadOnlyCypherExecutor cypher = new ReadOnlyCypherExecutor(
+                    driver, neo4j, api.getSchemaVersion(), api.getMaxResultNodes(), api.getMaxResultRelationships());
+            try (KgApiServer server = new KgApiServer(api, query, entityLookup, cypher, schema, () -> {
                 try {
                     driver.verifyConnectivity();
                     return true;

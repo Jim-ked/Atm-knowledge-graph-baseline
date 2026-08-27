@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import org.atmkg.core.model.CypherResultDTO;
 import org.atmkg.core.model.GraphDTO;
 import org.atmkg.core.model.GraphNodeDTO;
 import org.atmkg.core.model.GraphRelationshipDTO;
@@ -27,6 +28,16 @@ final class ApiJson {
 
     static String writeGraph(GraphDTO graph) throws JsonProcessingException {
         return MAPPER.writeValueAsString(graphMap(graph));
+    }
+
+    static String writeCypher(CypherResultDTO result) throws JsonProcessingException {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("schemaVersion", result.getSchemaVersion());
+        out.put("columns", result.getColumns());
+        out.put("rows", result.getRows());
+        out.put("graph", graphMap(result.getGraph()));
+        out.put("meta", new TreeMap<>(result.getMeta()));
+        return MAPPER.writeValueAsString(out);
     }
 
     static byte[] write(Object value) throws JsonProcessingException {

@@ -17,11 +17,15 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
+import org.atmkg.core.error.EntityLookupException;
 import org.atmkg.core.error.QueryExecutionException;
 import org.atmkg.core.error.ReadOnlyCypherException;
+import org.atmkg.core.model.CypherResultDTO;
 import org.atmkg.core.model.GraphDTO;
 import org.atmkg.core.model.OntologySchema;
+import org.atmkg.core.model.OntologyTerm;
 import org.atmkg.core.model.QuerySpec;
+import org.atmkg.core.spi.EntityLookupService;
 import org.atmkg.core.spi.QueryService;
 import org.atmkg.core.spi.ReadOnlyCypherService;
 
@@ -34,6 +38,7 @@ public final class KgApiServer implements AutoCloseable {
 
     private final ApiConfig config;
     private final QueryService queryService;
+    private final EntityLookupService entityLookupService;
     private final ReadOnlyCypherService cypherExecutor;
     private final OntologySchema schema;
     private final BooleanSupplier neo4jHealth;
@@ -42,13 +47,20 @@ public final class KgApiServer implements AutoCloseable {
 
     public KgApiServer(ApiConfig config, QueryService queryService, OntologySchema schema,
                        BooleanSupplier neo4jHealth) {
-        this(config, queryService, null, schema, neo4jHealth);
+        this(config, queryService, null, null, schema, neo4jHealth);
     }
 
     public KgApiServer(ApiConfig config, QueryService queryService, ReadOnlyCypherService cypherExecutor,
                        OntologySchema schema, BooleanSupplier neo4jHealth) {
+        this(config, queryService, null, cypherExecutor, schema, neo4jHealth);
+    }
+
+    public KgApiServer(ApiConfig config, QueryService queryService, EntityLookupService entityLookupService,
+                       ReadOnlyCypherService cypherExecutor, OntologySchema schema,
+                       BooleanSupplier neo4jHealth) {
         this.config = Objects.requireNonNull(config, "config");
         this.queryService = Objects.requireNonNull(queryService, "queryService");
+        this.entityLookupService = entityLookupService;
         this.cypherExecutor = cypherExecutor;
         this.schema = Objects.requireNonNull(schema, "schema");
         this.neo4jHealth = Objects.requireNonNull(neo4jHealth, "neo4jHealth");
@@ -95,6 +107,8 @@ public final class KgApiServer implements AutoCloseable {
             route(exchange);
         } catch (ApiFailure failure) {
             sendError(exchange, failure.status, failure.code, failure.getMessage(), failure.details);
+        } catch (EntityLookupException failure) {
+            sendError(exchange, failure.getStatus(), failure.getCode(), failure.getMessage(), failure.getDetails());
         } catch (ReadOnlyCypherException failure) {
             sendError(exchange, failure.getStatus(), failure.getCode(), failure.getMessage(), failure.getDetails());
         } catch (QueryExecutionException failure) {
@@ -203,6 +217,11 @@ public final class KgApiServer implements AutoCloseable {
             schema(exchange);
             return;
         }
+        if (rawPath.equals(base + "/entities/lookup")) {
+            requireMethod(exchange, "POST");
+            executeEntityLookup(exchange, readJson(exchange));
+            return;
+        }
         if (rawPath.startsWith(base + "/entities/")) {
             requireMethod(exchange, "GET");
             String rawUid = rawPath.substring((base + "/entities/").length());
@@ -231,6 +250,11 @@ public final class KgApiServer implements AutoCloseable {
             executeGraph(exchange, spec, spec.getType() != QuerySpec.Type.PATH);
             return;
         }
+        if (rawPath.equals(base + "/graph/named")) {
+            requireMethod(exchange, "POST");
+            executeGraph(exchange, named(readJson(exchange)), false);
+            return;
+        }
         if (rawPath.equals(base + "/graph/cypher")) {
             requireMethod(exchange, "POST");
             executeCypher(exchange, readCypher(readJson(exchange)));
@@ -256,14 +280,46 @@ public final class KgApiServer implements AutoCloseable {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("schemaVersion", config.getSchemaVersion());
         body.put("classes", schema.getClasses().keySet().stream().sorted().toList());
+        body.put("datatypeProperties", schema.getDatatypeProperties().keySet().stream().sorted().toList());
         body.put("objectProperties", schema.getObjectProperties().keySet().stream().sorted().toList());
+        body.put("classLabels", labels(schema.getClasses()));
+        body.put("datatypePropertyLabels", labels(schema.getDatatypeProperties()));
+        body.put("objectPropertyLabels", labels(schema.getObjectProperties()));
         sendJson(exchange, 200, body);
+    }
+
+    private Map<String, String> labels(Map<String, OntologyTerm> terms) {
+        Map<String, String> labels = new LinkedHashMap<>();
+        terms.keySet().stream().sorted().forEach(iri -> {
+            String label = terms.get(iri).getLabel();
+            labels.put(iri, label == null || label.isBlank() ? localName(iri) : label);
+        });
+        return labels;
+    }
+
+    private String localName(String iri) {
+        int index = Math.max(iri.lastIndexOf('#'), Math.max(iri.lastIndexOf('/'), iri.lastIndexOf(':')));
+        return index >= 0 && index + 1 < iri.length() ? iri.substring(index + 1) : iri;
     }
 
     private void entity(HttpExchange exchange, String uid) {
         QuerySpec spec = new QuerySpec(QuerySpec.Type.ENTITY, requireText(uid, "uid"), null, null,
                 Set.of(), Set.of(), QuerySpec.Direction.BOTH, null, Map.of());
         executeGraph(exchange, spec, true);
+    }
+
+    private void executeEntityLookup(HttpExchange exchange, JsonNode request) {
+        if (entityLookupService == null) throw new QueryExecutionException("实体定位服务未装配");
+        requireObject(request);
+        rejectUnknown(request, Set.of("key", "classIri"));
+        String key = requiredExactText(request, "key");
+        String classIri = optionalExactText(request, "classIri");
+        GraphDTO graph = entityLookupService.lookup(key, classIri);
+        try {
+            sendBytes(exchange, 200, ApiJson.writeGraph(graph).getBytes(StandardCharsets.UTF_8));
+        } catch (IOException ex) {
+            throw new IllegalStateException("GraphDTO JSON 写出失败", ex);
+        }
     }
 
     private void executeGraph(HttpExchange exchange, QuerySpec spec, boolean entityRequired) {
@@ -289,7 +345,8 @@ public final class KgApiServer implements AutoCloseable {
         if (cypherExecutor == null) {
             throw new QueryExecutionException("Viewer Cypher 执行器未装配");
         }
-        GraphDTO graph = cypherExecutor.execute(cypher);
+        CypherResultDTO result = cypherExecutor.execute(cypher);
+        GraphDTO graph = result.getGraph();
         if (graph.getNodes().size() > config.getMaxResultNodes()
                 || graph.getRelationships().size() > config.getMaxResultRelationships()) {
             Map<String, Object> details = new LinkedHashMap<>();
@@ -298,9 +355,9 @@ public final class KgApiServer implements AutoCloseable {
             throw new ReadOnlyCypherException(413, "RESULT_TOO_LARGE", "完整查询结果超过服务配置上限", details);
         }
         try {
-            sendBytes(exchange, 200, ApiJson.writeGraph(graph).getBytes(StandardCharsets.UTF_8));
+            sendBytes(exchange, 200, ApiJson.writeCypher(result).getBytes(StandardCharsets.UTF_8));
         } catch (IOException ex) {
-            throw new IllegalStateException("GraphDTO JSON 写出失败", ex);
+            throw new IllegalStateException("CypherResultDTO JSON 写出失败", ex);
         }
     }
 
@@ -338,6 +395,13 @@ public final class KgApiServer implements AutoCloseable {
                 Set.of(), Set.of(), direction(request, QuerySpec.Direction.OUTGOING), null, Map.of());
     }
 
+    private QuerySpec named(JsonNode request) {
+        requireObject(request);
+        rejectUnknown(request, Set.of("queryId", "startUid"));
+        return new QuerySpec(QuerySpec.Type.NAMED, requiredText(request, "startUid"), null, null,
+                Set.of(), Set.of(), QuerySpec.Direction.BOTH, requiredText(request, "queryId"), Map.of());
+    }
+
     private QuerySpec unified(JsonNode request) {
         requireObject(request);
         rejectUnknown(request, Set.of(
@@ -349,7 +413,7 @@ public final class KgApiServer implements AutoCloseable {
             invalid("type 必须是 ENTITY、NEIGHBORS、K_HOP 或 PATH");
             return null;
         }
-        if (type == QuerySpec.Type.NAMED) invalid("NAMED 查询尚未开放 HTTP API");
+        if (type == QuerySpec.Type.NAMED) invalid("NAMED 查询请使用 /graph/named");
         String startUid = requiredText(request, "startUid");
         String targetUid = type == QuerySpec.Type.PATH ? requiredText(request, "targetUid") : optionalText(request, "targetUid");
         Integer depth = type == QuerySpec.Type.K_HOP || type == QuerySpec.Type.PATH
@@ -406,6 +470,22 @@ public final class KgApiServer implements AutoCloseable {
         if (value == null || value.isNull()) return null;
         if (!value.isTextual()) invalid(field + " 必须是字符串");
         return requireText(value.textValue(), field);
+    }
+
+    private String requiredExactText(JsonNode request, String field) {
+        String value = optionalExactText(request, field);
+        if (value == null) invalid(field + " 不能为空");
+        return value;
+    }
+
+    private String optionalExactText(JsonNode request, String field) {
+        JsonNode value = request.get(field);
+        if (value == null || value.isNull()) return null;
+        if (!value.isTextual()) invalid(field + " 必须是字符串");
+        String text = value.textValue();
+        if (text.isBlank()) invalid(field + " 不能为空");
+        if (text.length() > 4096) invalid(field + " 过长");
+        return text;
     }
 
     private Integer requiredDepth(JsonNode request, String field) {

@@ -47,8 +47,8 @@
 - Neo4j 写入：稳定 `kg_uid`，不向外暴露 Neo4j 内部 ID；支持实体 contribution 合并，避免多来源同实体相互覆盖。
 - 同步：单条 resync、单入口 fullSync、全项目 fullRebuild、补偿扫描、可选 JDBC polling。
 - 查询：实体、完整一跳、完整 K 跳诱导子图、路径、外置 named query。
-- API：轻量 HTTP 服务，输出统一 GraphDTO；Viewer 静态挂载在 `/viewer/`。
-- Viewer：正式实现仅保留 G6；页面提供独立只读 Cypher 输入，结果复用同一 GraphDTO/GraphModel，不提供节点数量下拉框。
+- API：轻量 HTTP 服务；受控查询输出 GraphDTO，独立只读 Cypher 输出 table rows 与 GraphDTO graph 组成的 CypherResultDTO；Viewer 静态挂载在 `/viewer/`。
+- Viewer：正式实现仅保留 G6；本轮未修改 Viewer，新 CypherResultDTO 的 Table/Raw/Graph 适配留在后续独立开发块。
 - 人工工具：source preview、source→mapping preview、同步控制、Review CLI、Neo4j 控制脚本。
 
 ## 当前明确边界

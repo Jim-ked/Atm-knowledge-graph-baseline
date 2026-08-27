@@ -21,7 +21,7 @@
 - 缺失关系端点显式失败；
 - 实体、一跳、K-hop 完整诱导子图、路径查询；
 - 属性修改、关系改挂、新增、删除的投影更新；
-- API health/entity/one-hop/k-hop/path/schema 与错误模型；
+- API health/entity/entity-lookup/one-hop/k-hop/path/named/cypher/schema 与错误模型；
 - 稳定 `kg_uid`，不暴露 Neo4j internal id / elementId；
 - 多来源实体 contribution 的 canonical 重建与冲突回滚。
 - deleteProjection 在同一 Neo4j write transaction 内取得 UID before-state 并删除投影；
@@ -97,7 +97,7 @@
 正式 Viewer 已收敛为 G6-only。Sigma、Cytoscape、Graphology 及其实验依赖、adapter、workbench 和 gate 已从正式实现中删除。
 
 当前 Viewer 保留实体/K-hop/路径查询、节点与关系详情、标签模式、展开/收起、pin/unpin、重新平衡等已验证交互。
-当前 Viewer 还支持只读 Cypher：后端通过 `EXPLAIN` + `QueryType.READ_ONLY` 判定后执行，图结果复用同一 GraphModel/G6；scalar-only、写查询、贡献节点和其它 project 均有明确边界。
+只读 Cypher 后端已验证：通过 `EXPLAIN` + `QueryType.READ_ONLY` 判定后执行，一次返回 table rows 与 GraphDTO graph；标量结果正常返回空 graph，写查询、贡献节点和其它 project 均有明确边界。本轮未修改 Viewer，新 CypherResultDTO 的 Table/Raw/Graph 适配尚未在 Viewer 验证。
 
 ## 7. 尚未验证/未实现
 

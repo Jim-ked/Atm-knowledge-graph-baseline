@@ -3,12 +3,14 @@ package org.atmkg.infra.query;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import org.atmkg.core.error.ReadOnlyCypherException;
+import org.atmkg.core.model.CypherResultDTO;
 import org.atmkg.core.model.GraphDTO;
 import org.atmkg.core.model.GraphNodeDTO;
 import org.atmkg.core.model.GraphRelationshipDTO;
@@ -31,10 +33,11 @@ import org.neo4j.driver.types.Relationship;
  * AccessMode.READ 只是第二层连接约束；本类不属于 QueryService/QuerySpec 主查询链。
  */
 public final class ReadOnlyCypherExecutor implements ReadOnlyCypherService {
+    static final int MAX_RESULT_ROWS = 1000;
     private static final String ENTITY_LABEL = "KGEntity";
     private static final String CONTRIBUTION_LABEL = "KGEntityContribution";
     private static final String EXPLAIN_PROFILE_MESSAGE =
-            "Viewer Cypher用于返回图结果，请直接输入MATCH/RETURN等只读查询；EXPLAIN/PROFILE请在Neo4j Browser中使用。";
+            "Cypher接口用于返回只读查询结果，请直接输入MATCH/RETURN等查询；EXPLAIN/PROFILE请在Neo4j Browser中使用。";
 
     private final Driver driver;
     private final SessionConfig sessionConfig;
@@ -61,7 +64,7 @@ public final class ReadOnlyCypherExecutor implements ReadOnlyCypherService {
     }
 
     @Override
-    public GraphDTO execute(String cypher) {
+    public CypherResultDTO execute(String cypher) {
         String query = validateInput(cypher);
         try (Session session = driver.session(sessionConfig)) {
             QueryType queryType = session.run("EXPLAIN " + query).consume().queryType();
@@ -71,9 +74,28 @@ public final class ReadOnlyCypherExecutor implements ReadOnlyCypherService {
             }
             Result result = session.run(query);
             GraphAccumulator graph = new GraphAccumulator();
-            while (result.hasNext()) graph.accept(result.next());
+            List<String> columns = List.copyOf(result.keys());
+            List<Map<String, Object>> rows = new ArrayList<>();
+            while (result.hasNext()) {
+                if (rows.size() >= MAX_RESULT_ROWS) {
+                    throw new ReadOnlyCypherException(413, "RESULT_TOO_LARGE",
+                            "Cypher 表格结果超过固定行数上限", Map.of("rowLimit", MAX_RESULT_ROWS));
+                }
+                Record record = result.next();
+                graph.accept(record);
+                Map<String, Object> row = new LinkedHashMap<>();
+                for (String column : columns) row.put(column, jsonSafe(record.get(column)));
+                rows.add(row);
+            }
             result.consume();
-            return graph.toDto();
+            GraphDTO graphDto = graph.toDto();
+            Map<String, Object> meta = new LinkedHashMap<>();
+            meta.put("queryType", "CYPHER");
+            meta.put("rowCount", rows.size());
+            meta.put("nodeCount", graphDto.getNodes().size());
+            meta.put("relationshipCount", graphDto.getRelationships().size());
+            meta.put("complete", true);
+            return new CypherResultDTO(schemaVersion, columns, rows, graphDto, meta);
         } catch (ReadOnlyCypherException ex) {
             throw ex;
         } catch (RuntimeException ex) {
@@ -104,18 +126,30 @@ public final class ReadOnlyCypherExecutor implements ReadOnlyCypherService {
 
         void accept(Record record) {
             for (Value value : record.values()) acceptValue(value);
-            resolvePendingRelationships();
+            resolvePendingRelationships(false);
         }
 
         void acceptValue(Value value) {
             if (value == null || value.isNull()) return;
-            if (value.asObject() instanceof Node) { addNode(value.asNode()); return; }
-            if (value.asObject() instanceof Relationship) { pendingRelationships.add(value.asRelationship()); return; }
-            if (value.asObject() instanceof Path) {
-                Path path = value.asPath();
+            acceptObject(value.asObject());
+        }
+
+        void acceptObject(Object value) {
+            if (value == null) return;
+            if (value instanceof Value driverValue) { acceptValue(driverValue); return; }
+            if (value instanceof Node node) { addNode(node); return; }
+            if (value instanceof Relationship relationship) { pendingRelationships.add(relationship); return; }
+            if (value instanceof Path path) {
                 for (Node node : path.nodes()) addNode(node);
                 for (Relationship relationship : path.relationships()) pendingRelationships.add(relationship);
                 return;
+            }
+            if (value instanceof Map<?, ?> map) {
+                for (Object nested : map.values()) acceptObject(nested);
+                return;
+            }
+            if (value instanceof Iterable<?> iterable) {
+                for (Object nested : iterable) acceptObject(nested);
             }
         }
 
@@ -132,25 +166,30 @@ public final class ReadOnlyCypherExecutor implements ReadOnlyCypherService {
             enforceLimits();
         }
 
-        void resolvePendingRelationships() {
-            for (Relationship relationship : pendingRelationships) {
+        void resolvePendingRelationships(boolean discardUnresolved) {
+            for (Iterator<Relationship> iterator = pendingRelationships.iterator(); iterator.hasNext();) {
+                Relationship relationship = iterator.next();
                 String source = internalToUid.get(relationship.startNodeElementId());
                 String target = internalToUid.get(relationship.endNodeElementId());
                 Map<String, Object> props = relationship.asMap();
                 Object idValue = props.get("kg_uid");
-                if (source == null || target == null || idValue == null || String.valueOf(idValue).isBlank()) continue;
+                if (idValue == null || String.valueOf(idValue).isBlank()) {
+                    iterator.remove();
+                    continue;
+                }
+                if (source == null || target == null) {
+                    if (discardUnresolved) iterator.remove();
+                    continue;
+                }
                 String id = String.valueOf(idValue);
                 relationships.putIfAbsent(id, relationshipFrom(relationship, source, target));
+                iterator.remove();
                 enforceLimits();
             }
-            pendingRelationships.clear();
         }
 
         GraphDTO toDto() {
-            if (nodes.isEmpty() && relationships.isEmpty()) {
-                throw new ReadOnlyCypherException(400, "CYPHER_NO_GRAPH_RESULT",
-                        "查询没有可展示的图结果，请返回 n、n,r,m 或 p；关系查询请同时 RETURN 两端节点，例如 RETURN a,r,b");
-            }
+            resolvePendingRelationships(true);
             Map<String, Object> meta = new LinkedHashMap<>();
             meta.put("queryType", "CYPHER");
             meta.put("nodeCount", nodes.size());
@@ -166,6 +205,89 @@ public final class ReadOnlyCypherExecutor implements ReadOnlyCypherService {
                         Map.of("nodeCount", nodes.size(), "relationshipCount", relationships.size()));
             }
         }
+    }
+
+    private Object jsonSafe(Object value) {
+        if (value == null) return null;
+        if (value instanceof Value driverValue) {
+            return driverValue.isNull() ? null : jsonSafe(driverValue.asObject());
+        }
+        if (value instanceof String || value instanceof Boolean || value instanceof Number) return value;
+        if (value instanceof Node node) return tableNode(node);
+        if (value instanceof Relationship relationship) return tableRelationship(relationship);
+        if (value instanceof Path path) {
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("type", "path");
+            List<Object> nodes = new ArrayList<>();
+            for (Node node : path.nodes()) nodes.add(tableNode(node));
+            out.put("nodes", List.copyOf(nodes));
+            List<Object> relationships = new ArrayList<>();
+            for (Relationship relationship : path.relationships()) {
+                relationships.add(tableRelationship(relationship));
+            }
+            out.put("relationships", List.copyOf(relationships));
+            return Collections.unmodifiableMap(out);
+        }
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> out = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                out.put(String.valueOf(entry.getKey()), jsonSafe(entry.getValue()));
+            }
+            return Collections.unmodifiableMap(out);
+        }
+        if (value instanceof Iterable<?> iterable) {
+            List<Object> out = new ArrayList<>();
+            for (Object item : iterable) out.add(jsonSafe(item));
+            return Collections.unmodifiableList(out);
+        }
+        if (value.getClass().isArray()) {
+            int length = java.lang.reflect.Array.getLength(value);
+            List<Object> out = new ArrayList<>(length);
+            for (int i = 0; i < length; i++) out.add(jsonSafe(java.lang.reflect.Array.get(value, i)));
+            return Collections.unmodifiableList(out);
+        }
+        if (value instanceof java.time.temporal.TemporalAccessor
+                || value instanceof java.time.temporal.TemporalAmount
+                || value instanceof org.neo4j.driver.types.Point) {
+            return String.valueOf(value);
+        }
+        return "<unsupported:" + value.getClass().getName() + ">";
+    }
+
+    private Map<String, Object> tableNode(Node node) {
+        Map<String, Object> properties = jsonSafeMap(node.asMap());
+        Object uidValue = node.asMap().get("kg_uid");
+        String uid = uidValue == null || String.valueOf(uidValue).isBlank() ? null : String.valueOf(uidValue);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("type", "node");
+        out.put("id", uid == null ? node.elementId() : uid);
+        if (uid != null) out.put("uid", uid);
+        List<String> labels = new ArrayList<>();
+        node.labels().forEach(labels::add);
+        labels.sort(String::compareTo);
+        out.put("labels", List.copyOf(labels));
+        out.put("properties", properties);
+        return Collections.unmodifiableMap(out);
+    }
+
+    private Map<String, Object> tableRelationship(Relationship relationship) {
+        Map<String, Object> properties = jsonSafeMap(relationship.asMap());
+        Object uidValue = relationship.asMap().get("kg_uid");
+        String uid = uidValue == null || String.valueOf(uidValue).isBlank() ? null : String.valueOf(uidValue);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("type", "relationship");
+        out.put("id", uid == null ? relationship.elementId() : uid);
+        if (uid != null) out.put("uid", uid);
+        out.put("relationshipType", relationship.type());
+        out.put("startElementId", relationship.startNodeElementId());
+        out.put("endElementId", relationship.endNodeElementId());
+        out.put("properties", properties);
+        return Collections.unmodifiableMap(out);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> jsonSafeMap(Map<String, Object> source) {
+        return (Map<String, Object>) jsonSafe(source);
     }
 
     private GraphNodeDTO nodeFrom(Node node, String uid) {
@@ -187,7 +309,7 @@ public final class ReadOnlyCypherExecutor implements ReadOnlyCypherService {
     private Map<String, Object> cleanProperties(Map<String, Object> source, Set<String> reserved) {
         Map<String, Object> props = new LinkedHashMap<>(source);
         props.keySet().removeIf(key -> reserved.contains(key) || key.startsWith("kg_"));
-        return props;
+        return jsonSafeMap(props);
     }
 
     private String localName(String iri) {
