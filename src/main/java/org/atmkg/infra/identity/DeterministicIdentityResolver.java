@@ -4,13 +4,12 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import org.atmkg.core.error.MappingExecutionException;
 import org.atmkg.core.model.SourceRecord;
-import org.atmkg.core.model.mapping.EntityMappingSpec;
 import org.atmkg.core.model.mapping.RelationshipMappingSpec;
 import org.atmkg.core.spi.IdentityResolver;
 
 /**
- * 新增实体/表/文件时不要修改本类。在 {@code mapping/字段映射.xlsx} 的“业务主键”选择稳定语义字段，
- * “UID规则”使用现有 class-local-business-key；物理读取键在 {@code config/sources.yaml keyFields} 配置。
+ * 新增实体/表/文件时不要修改本类。在 {@code mapping/字段映射.xlsx} 的“业务主键”选择稳定语义字段；
+ * 物理读取键在 {@code config/sources.yaml keyFields} 配置。实体身份算法固定为 Class IRI + 业务键值。
  *
  * <p>只有经过全图迁移设计的 namespace/UID 编码算法变化才写 Java。把文件名、路径、table、Sheet、行号或
  * Neo4j internal ID 加入算法，会让同一业务对象跨部署变 UID，并使已有关系端点失配。UID 不稳定先比较两次
@@ -25,11 +24,11 @@ public final class DeterministicIdentityResolver implements IdentityResolver {
     }
 
     @Override
-    public String entityUid(EntityMappingSpec mapping, String businessKeyValue) {
+    public String entityUid(String classIri, String businessKeyValue) {
         if (businessKeyValue == null || businessKeyValue.isBlank()) {
-            throw new MappingExecutionException("实体业务主键为空：" + mapping.getClassIri());
+            throw new MappingExecutionException("实体业务主键为空：" + classIri);
         }
-        return namespace + "entity:" + enc(mapping.getClassIri()) + ":" + enc(businessKeyValue.trim());
+        return namespace + "entity:" + enc(classIri) + ":" + enc(businessKeyValue.trim());
     }
 
     @Override

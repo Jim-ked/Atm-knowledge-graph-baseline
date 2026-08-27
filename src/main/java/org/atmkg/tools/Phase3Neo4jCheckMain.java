@@ -81,17 +81,17 @@ public final class Phase3Neo4jCheckMain {
             EntityMappingSpec controlArea = entityMapping(catalog, "ControlArea");
             EntityMappingSpec airspace = entityMapping(catalog, "Airspace");
             EntityMappingSpec airspaceGeometry = entityMapping(catalog, "AirspaceGeometry");
-            String z001 = ids.entityUid(airport, "Z001");
-            String z002 = ids.entityUid(airport, "Z002");
-            String z999 = ids.entityUid(airport, "Z999");
-            String changedRunway = ids.entityUid(runway, "Z001-01/19");
-            String insertedRunway = ids.entityUid(runway, "Z999-01/19");
-            String changedNode = ids.entityUid(routeNode, "R003:N005");
-            String oldNextNode = ids.entityUid(routeNode, "R003:N006");
-            String missedReportingPoint = ids.entityUid(reportingPoint, "RPT002");
-            String deletedControlArea = ids.entityUid(controlArea, "CTA003");
-            String protectedAirspace = ids.entityUid(airspace, "AS0003");
-            String protectedGeometry = ids.entityUid(airspaceGeometry, "AS0003:G001");
+            String z001 = ids.entityUid(airport.getClassIri(), "Z001");
+            String z002 = ids.entityUid(airport.getClassIri(), "Z002");
+            String z999 = ids.entityUid(airport.getClassIri(), "Z999");
+            String changedRunway = ids.entityUid(runway.getClassIri(), "Z001-01/19");
+            String insertedRunway = ids.entityUid(runway.getClassIri(), "Z999-01/19");
+            String changedNode = ids.entityUid(routeNode.getClassIri(), "R003:N005");
+            String oldNextNode = ids.entityUid(routeNode.getClassIri(), "R003:N006");
+            String missedReportingPoint = ids.entityUid(reportingPoint.getClassIri(), "RPT002");
+            String deletedControlArea = ids.entityUid(controlArea.getClassIri(), "CTA003");
+            String protectedAirspace = ids.entityUid(airspace.getClassIri(), "AS0003");
+            String protectedGeometry = ids.entityUid(airspaceGeometry.getClassIri(), "AS0003:G001");
 
             try (Session session = driver.session(SessionConfig.forDatabase(settings.getDatabase()))) {
                 require(propertyEquals(session, settings.getProjectId(), z001, NS + "nameZh", "模拟机场1"),

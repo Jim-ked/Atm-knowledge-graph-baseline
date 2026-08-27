@@ -26,11 +26,10 @@ import org.atmkg.core.spi.MappingEngine;
  *
  * <p>只有所有实体共用的字段路径读取、trim/upper/lower/integer/long/decimal/boolean 转换或 MappingResult
  * 生成规则确需变化才写 Java。加入 Airport/Airspace/Flight if 会把 workbook 语义硬编码进 Core 主链。
- * 实体/属性 mapping 按 {@code record.sourceId + record.objectName} 选择；关系 mapping 当前按
- * {@code record.sourceId} 取该 sourceId 下全部关系行，再对每行读取 locator，任一端为空就跳过。
- * 因此同一 sourceId 下多个 object 只要出现相同 locator 字段，可能尝试同一关系；新增 sourceObject
- * 过滤需改 workbook/Core 契约，本轮不要做。映射失败先用 Excel preview 或 JDBC sync/resync 确认字段，
- * 再查工作簿 businessKey/locator；不要从查询结果补端点。
+ * 实体、属性和关系 mapping 都按 {@code record.sourceId + record.objectName} 选择。关系端点 UID 直接由
+ * 映射中的端点 Class IRI 和当前关系事实记录中的引用值生成，不要求关系来源同时提供端点实体 mapping。
+ * 映射失败先用 Excel preview 或 JDBC sync/resync 确认字段，再查工作簿 businessKey/引用字段；不要从
+ * 查询结果补端点。
  */
 public final class DefaultMappingEngine implements MappingEngine {
     private final MappingCatalog catalog;
@@ -52,7 +51,7 @@ public final class DefaultMappingEngine implements MappingEngine {
                 throw new MappingExecutionException("实体业务主键缺失：" + entitySpec.getBusinessKey()
                         + "，source=" + record.getSourceId() + "/" + record.getObjectName());
             }
-            String uid = identityResolver.entityUid(entitySpec, String.valueOf(keyValue));
+            String uid = identityResolver.entityUid(entitySpec.getClassIri(), String.valueOf(keyValue));
             Map<String, Object> properties = new LinkedHashMap<>();
             for (PropertyMappingSpec propertySpec : catalog.propertyMappingsFor(
                     record.getSourceId(), record.getObjectName(), entitySpec.getClassIri())) {
@@ -69,20 +68,15 @@ public final class DefaultMappingEngine implements MappingEngine {
             entities.add(new GraphEntity(uid, entitySpec.getClassIri(), String.valueOf(keyValue), properties, provenance(record)));
         }
 
-        for (RelationshipMappingSpec relationshipSpec : catalog.relationshipMappingsFor(record.getSourceId())) {
+        for (RelationshipMappingSpec relationshipSpec : catalog.relationshipMappingsFor(
+                record.getSourceId(), record.getObjectName())) {
             Object subjectKey = readPath(record.getFields(), relationshipSpec.getSubjectLocator());
             Object objectKey = readPath(record.getFields(), relationshipSpec.getObjectLocator());
             if (isBlankValue(subjectKey) || isBlankValue(objectKey)) continue;
-            EntityMappingSpec subjectMapping = catalog.compatibleEntityMapping(
-                            record.getSourceId(), relationshipSpec.getSubjectClassIri())
-                    .orElseThrow(() -> new MappingExecutionException(
-                            "关系起点实体身份映射缺失或 UID规则不兼容：" + relationshipSpec.getPredicateIri()));
-            EntityMappingSpec objectMapping = catalog.compatibleEntityMapping(
-                            record.getSourceId(), relationshipSpec.getObjectClassIri())
-                    .orElseThrow(() -> new MappingExecutionException(
-                            "关系终点实体身份映射缺失或 UID规则不兼容：" + relationshipSpec.getPredicateIri()));
-            String sourceUid = identityResolver.entityUid(subjectMapping, String.valueOf(subjectKey));
-            String targetUid = identityResolver.entityUid(objectMapping, String.valueOf(objectKey));
+            String sourceUid = identityResolver.entityUid(
+                    relationshipSpec.getSubjectClassIri(), String.valueOf(subjectKey));
+            String targetUid = identityResolver.entityUid(
+                    relationshipSpec.getObjectClassIri(), String.valueOf(objectKey));
             String relationUid = identityResolver.relationshipUid(relationshipSpec, sourceUid, targetUid, record);
             relationships.add(new GraphRelationship(relationUid, relationshipSpec.getPredicateIri(), sourceUid, targetUid,
                     Map.of(), provenance(record)));

@@ -41,7 +41,7 @@
 ## 当前主要能力
 
 - 唯一正式本体：`ontology/atm_knowledge_graph.ttl`；历史版本由 Git 保存，不提供运行时多版本切换。
-- 人工语义映射：`mapping/字段映射.xlsx` 固定三张 Sheet：实体映射、属性映射、关系映射。
+- 人工语义映射：`mapping/字段映射.xlsx` 的实体映射、属性映射、关系映射是三张运行 Sheet；本体参考仅供人工查阅。
 - Excel 数据源：支持 `row`、`group_first`、`adjacent_next` 三种通用记录组装模式。
 - JDBC 数据源：保持通用 JDBC Adapter，当前正式源数据库为 Oracle，runtime driver 为 `ojdbc17`；通过标准 JDBC 读取受控表/视图，支持稳定业务键和可选时间水位字段。
 - Neo4j 写入：稳定 `kg_uid`，不向外暴露 Neo4j 内部 ID；支持实体 contribution 合并，避免多来源同实体相互覆盖。

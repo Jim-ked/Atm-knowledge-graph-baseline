@@ -10,6 +10,7 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.atmkg.infra.mapping.MappingWorkbookFormat;
 
 /**
  * Generates the development-only fixture mapping workbook.  The formal mapping workbook is
@@ -30,9 +31,16 @@ public final class FixtureMappingWorkbookGenerator {
         try {
             Files.createDirectories(output.toAbsolutePath().normalize().getParent());
             try (Workbook workbook = new XSSFWorkbook()) {
-                writeEntities(workbook.createSheet("实体映射"));
-                writeProperties(workbook.createSheet("属性映射"));
-                writeRelationships(workbook.createSheet("关系映射"));
+                MappingWorkbookFormat.createFormalSheets(workbook);
+                MappingWorkbookFormat.writeHeader(
+                        workbook.createSheet(MappingWorkbookFormat.REFERENCE_SHEET),
+                        MappingWorkbookFormat.REFERENCE_HEADERS);
+                writeEntities(workbook.getSheet(MappingWorkbookFormat.ENTITY_SHEET));
+                writeProperties(workbook.getSheet(MappingWorkbookFormat.PROPERTY_SHEET));
+                writeRelationships(workbook.getSheet(MappingWorkbookFormat.RELATIONSHIP_SHEET));
+                MappingWorkbookFormat.applyEditingFeatures(workbook);
+                MappingWorkbookFormat.configureReferenceSheet(
+                        workbook.getSheet(MappingWorkbookFormat.REFERENCE_SHEET));
                 try (OutputStream stream = Files.newOutputStream(output)) {
                     workbook.write(stream);
                 }
@@ -43,7 +51,6 @@ public final class FixtureMappingWorkbookGenerator {
     }
 
     private static void writeEntities(Sheet sheet) {
-        row(sheet, 0, "实体类", "权威数据源 sourceId", "源记录类型/表/Sheet", "业务主键", "UID规则");
         String[][] rows = {
                 {"Airport", "fixture", "AIRPORT", "airportCode"},
                 {"Runway", "fixture", "RUNWAY", "runwayCode"},
@@ -60,11 +67,12 @@ public final class FixtureMappingWorkbookGenerator {
                 {"ControlArea", "fixture", "CONTROL_AREA", "controlAreaCode"},
                 {"FlightInformationRegion", "fixture", "FLIGHT_INFORMATION_REGION", "flightInformationRegionCode"}
         };
-        for (int i = 0; i < rows.length; i++) row(sheet, i + 1, rows[i][0], rows[i][1], rows[i][2], rows[i][3], "class-local-business-key");
+        for (int i = 0; i < rows.length; i++) {
+            row(sheet, i + 1, rows[i][1], rows[i][2], rows[i][0], rows[i][3]);
+        }
     }
 
     private static void writeProperties(Sheet sheet) {
-        row(sheet, 0, "实体类", "本体属性", "中文含义", "sourceId", "源对象", "源字段/路径", "必要转换", "是否必填");
         List<String[]> rows = new ArrayList<>();
         add(rows, "Airport", "airportCode", "机场代码", "AIRPORT", "airportCode", "airportCode", "", "true");
         add(rows, "Airport", "icaoCode", "ICAO 四字码", "AIRPORT", "icaoCode", "icaoCode", "", "false");
@@ -137,21 +145,20 @@ public final class FixtureMappingWorkbookGenerator {
     }
 
     private static void writeRelationships(Sheet sheet) {
-        row(sheet, 0, "关系类型", "起点类", "终点类", "sourceId", "起点定位字段", "终点定位字段", "说明");
         String[][] rows = {
-                {"hasRunway", "Airport", "Runway", "fixture", "airportCode", "runwayCode", "RUNWAY record"},
-                {"hasDirection", "Runway", "RunwayDirection", "fixture", "runwayCode", "directionKey", "RUNWAY_DIRECTION record"},
-                {"hasNode", "Route", "RouteNode", "fixture", "routeCode", "nodeKey", "ordinary route node"},
-                {"hasNode", "ScheduledFlightRoute", "RouteNode", "fixture", "scheduledRouteCode", "nodeKey", "scheduled route node"},
-                {"hasSegment", "Route", "RouteSegment", "fixture", "routeCode", "segmentKey", "ordinary route segment"},
-                {"hasSegment", "ScheduledFlightRoute", "RouteSegment", "fixture", "scheduledRouteCode", "segmentKey", "scheduled route segment"},
-                {"nextNode", "RouteNode", "RouteNode", "fixture", "nodeKey", "nextNodeKey", "blank on terminal node"},
-                {"fromNode", "RouteSegment", "RouteNode", "fixture", "segmentKey", "fromNodeKey", "segment start"},
-                {"toNode", "RouteSegment", "RouteNode", "fixture", "segmentKey", "toNodeKey", "segment end"},
-                {"refersTo", "RouteNode", "NavigationAid", "fixture", "nodeKey", "navigationAidCode", "mutually exclusive locator"},
-                {"refersTo", "RouteNode", "ReportingPoint", "fixture", "nodeKey", "reportingPointCode", "mutually exclusive locator"},
-                {"hasGeometry", "Airspace", "AirspaceGeometry", "fixture", "airspaceCode", "geometryKey", "geometry record"},
-                {"hasBoundaryPoint", "AirspaceGeometry", "BoundaryPoint", "fixture", "geometryKey", "boundaryPointKey", "boundary point record"}
+                {"fixture", "RUNWAY", "hasRunway", "Airport", "airportCode", "Runway", "runwayCode", "RUNWAY record"},
+                {"fixture", "RUNWAY_DIRECTION", "hasDirection", "Runway", "runwayCode", "RunwayDirection", "directionKey", "RUNWAY_DIRECTION record"},
+                {"fixture", "ROUTE_NODE", "hasNode", "Route", "routeCode", "RouteNode", "nodeKey", "ordinary route node"},
+                {"fixture", "ROUTE_NODE", "hasNode", "ScheduledFlightRoute", "scheduledRouteCode", "RouteNode", "nodeKey", "scheduled route node"},
+                {"fixture", "ROUTE_SEGMENT", "hasSegment", "Route", "routeCode", "RouteSegment", "segmentKey", "ordinary route segment"},
+                {"fixture", "ROUTE_SEGMENT", "hasSegment", "ScheduledFlightRoute", "scheduledRouteCode", "RouteSegment", "segmentKey", "scheduled route segment"},
+                {"fixture", "ROUTE_NODE", "nextNode", "RouteNode", "nodeKey", "RouteNode", "nextNodeKey", "blank on terminal node"},
+                {"fixture", "ROUTE_SEGMENT", "fromNode", "RouteSegment", "segmentKey", "RouteNode", "fromNodeKey", "segment start"},
+                {"fixture", "ROUTE_SEGMENT", "toNode", "RouteSegment", "segmentKey", "RouteNode", "toNodeKey", "segment end"},
+                {"fixture", "ROUTE_NODE", "refersTo", "RouteNode", "nodeKey", "NavigationAid", "navigationAidCode", "mutually exclusive locator"},
+                {"fixture", "ROUTE_NODE", "refersTo", "RouteNode", "nodeKey", "ReportingPoint", "reportingPointCode", "mutually exclusive locator"},
+                {"fixture", "AIRSPACE_GEOMETRY", "hasGeometry", "Airspace", "airspaceCode", "AirspaceGeometry", "geometryKey", "geometry record"},
+                {"fixture", "BOUNDARY_POINT", "hasBoundaryPoint", "AirspaceGeometry", "geometryKey", "BoundaryPoint", "boundaryPointKey", "boundary point record"}
         };
         for (int i = 0; i < rows.length; i++) row(sheet, i + 1, rows[i]);
     }
@@ -162,8 +169,8 @@ public final class FixtureMappingWorkbookGenerator {
         if (!propertyName.equals(mappedPropertyName)) {
             throw new IllegalArgumentException("fixture 属性映射列不一致：" + propertyName + " / " + mappedPropertyName);
         }
-        rows.add(new String[]{className, propertyName, label, "fixture", sourceObject,
-                sourcePath, transform, required});
+        rows.add(new String[]{"fixture", sourceObject, className, sourcePath, propertyName,
+                transform, Boolean.parseBoolean(required) ? "是" : "否"});
     }
 
     private static void row(Sheet sheet, int index, String... values) {

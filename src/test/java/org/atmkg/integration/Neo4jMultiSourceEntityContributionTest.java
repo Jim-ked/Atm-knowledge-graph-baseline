@@ -143,14 +143,14 @@ class Neo4jMultiSourceEntityContributionTest {
 
     private void assertRelationshipEndpointResolution() {
         EntityMappingSpec airportBase = new EntityMappingSpec(
-                NS + "Airport", "fixture", "airport-base", "airport_code", "businessKey");
+                NS + "Airport", "fixture", "airport-base", "airport_code");
         EntityMappingSpec airportPosition = new EntityMappingSpec(
-                NS + "Airport", "fixture", "airport-position", "position_airport_code", "businessKey");
+                NS + "Airport", "fixture", "airport-position", "position_airport_code");
         EntityMappingSpec runway = new EntityMappingSpec(
-                NS + "Runway", "fixture", "runway", "runway_code", "businessKey");
+                NS + "Runway", "fixture", "runway", "runway_code");
         RelationshipMappingSpec hasRunway = new RelationshipMappingSpec(
                 NS + "hasRunway", NS + "Airport", NS + "Runway", "fixture",
-                "airport_code", "runway_code", "");
+                "runway", "airport_code", "runway_code", "");
         DefaultMappingEngine engine = new DefaultMappingEngine(
                 new MappingCatalog(List.of(airportBase, airportPosition, runway), List.of(), List.of(hasRunway)),
                 new DeterministicIdentityResolver("urn:test:kg:"));

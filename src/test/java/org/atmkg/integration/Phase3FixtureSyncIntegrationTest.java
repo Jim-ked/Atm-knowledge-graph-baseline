@@ -61,15 +61,15 @@ class Phase3FixtureSyncIntegrationTest {
         EntityMappingSpec routeNode = entityMapping(catalog, "RouteNode");
         EntityMappingSpec reportingPoint = entityMapping(catalog, "ReportingPoint");
         EntityMappingSpec controlArea = entityMapping(catalog, "ControlArea");
-        String z001 = ids.entityUid(airport, "Z001");
-        String z002 = ids.entityUid(airport, "Z002");
-        String z999 = ids.entityUid(airport, "Z999");
-        String changedRunway = ids.entityUid(runway, "Z001-01/19");
-        String insertedRunway = ids.entityUid(runway, "Z999-01/19");
-        String changedNode = ids.entityUid(routeNode, "R003:N005");
-        String oldNextNode = ids.entityUid(routeNode, "R003:N006");
-        String missedReportingPoint = ids.entityUid(reportingPoint, "RPT002");
-        String deletedControlArea = ids.entityUid(controlArea, "CTA003");
+        String z001 = ids.entityUid(airport.getClassIri(), "Z001");
+        String z002 = ids.entityUid(airport.getClassIri(), "Z002");
+        String z999 = ids.entityUid(airport.getClassIri(), "Z999");
+        String changedRunway = ids.entityUid(runway.getClassIri(), "Z001-01/19");
+        String insertedRunway = ids.entityUid(runway.getClassIri(), "Z999-01/19");
+        String changedNode = ids.entityUid(routeNode.getClassIri(), "R003:N005");
+        String oldNextNode = ids.entityUid(routeNode.getClassIri(), "R003:N006");
+        String missedReportingPoint = ids.entityUid(reportingPoint.getClassIri(), "RPT002");
+        String deletedControlArea = ids.entityUid(controlArea.getClassIri(), "CTA003");
         assertRelationship(store, NS + "hasRunway", z001, changedRunway, true);
         assertRelationship(store, NS + "hasRunway", z002, changedRunway, false);
 

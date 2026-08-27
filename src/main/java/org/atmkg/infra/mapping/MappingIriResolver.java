@@ -11,7 +11,7 @@ final class MappingIriResolver {
 
     static String resolve(String raw, Map<String, OntologyTerm> allowed) {
         String value = trim(raw);
-        if (value.isEmpty() || isPending(value)) return value;
+        if (value.isEmpty()) return value;
         if (allowed.containsKey(value)) return value;
         if (isCompleteIri(value)) return value;
         String local = localName(value);
@@ -30,7 +30,6 @@ final class MappingIriResolver {
         return pos >= 0 && pos + 1 < iri.length() ? iri.substring(pos + 1) : iri;
     }
 
-    static boolean isPending(String value) { return "[待映射]".equals(trim(value)); }
     static String trim(String value) { return value == null ? "" : value.trim(); }
 
     private static boolean isCompleteIri(String value) {

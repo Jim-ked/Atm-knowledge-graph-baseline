@@ -187,7 +187,7 @@ public final class Phase4Neo4jApiCheckMain {
     private static String uid(MappingCatalog catalog, DeterministicIdentityResolver ids,
                               String className, String sourceKey) {
         EntityMappingSpec mapping = catalog.uniqueEntityMapping("fixture", NS + className).orElseThrow();
-        return ids.entityUid(mapping, sourceKey);
+        return ids.entityUid(mapping.getClassIri(), sourceKey);
     }
 
     private static HttpResponse<String> get(HttpClient client, URI base, String path) throws Exception {

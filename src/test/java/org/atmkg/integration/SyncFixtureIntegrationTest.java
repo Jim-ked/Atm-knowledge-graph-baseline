@@ -32,18 +32,18 @@ class SyncFixtureIntegrationTest {
         CsvFixtureSourceAdapter base = new CsvFixtureSourceAdapter("fixture", root, keys);
         CsvFixtureSourceAdapter changed = new CsvFixtureSourceAdapter("fixture", root.resolve("changed"), keys);
 
-        EntityMappingSpec airport = new EntityMappingSpec(NS + "Airport", "fixture", "AIRPORT", "airportCode", "businessKey");
-        EntityMappingSpec runway = new EntityMappingSpec(NS + "Runway", "fixture", "RUNWAY", "runwayCode", "businessKey");
-        EntityMappingSpec airspace = new EntityMappingSpec(NS + "Airspace", "fixture", "AIRSPACE", "airspaceCode", "businessKey");
+        EntityMappingSpec airport = new EntityMappingSpec(NS + "Airport", "fixture", "AIRPORT", "airportCode");
+        EntityMappingSpec runway = new EntityMappingSpec(NS + "Runway", "fixture", "RUNWAY", "runwayCode");
+        EntityMappingSpec airspace = new EntityMappingSpec(NS + "Airspace", "fixture", "AIRSPACE", "airspaceCode");
         MappingCatalog catalog = new MappingCatalog(
                 List.of(airport, runway, airspace),
                 List.of(
-                        new PropertyMappingSpec(NS + "Airport", NS + "nameZh", "", "fixture", "AIRPORT", "nameZh", "trim", true),
-                        new PropertyMappingSpec(NS + "Airport", NS + "elevation", "", "fixture", "AIRPORT", "elevation", "decimal", false),
-                        new PropertyMappingSpec(NS + "Runway", NS + "length", "", "fixture", "RUNWAY", "length", "decimal", true),
-                        new PropertyMappingSpec(NS + "Airspace", NS + "airspaceName", "", "fixture", "AIRSPACE", "airspaceName", "trim", true)),
+                        new PropertyMappingSpec(NS + "Airport", NS + "nameZh", "fixture", "AIRPORT", "nameZh", "trim", true),
+                        new PropertyMappingSpec(NS + "Airport", NS + "elevation", "fixture", "AIRPORT", "elevation", "decimal", false),
+                        new PropertyMappingSpec(NS + "Runway", NS + "length", "fixture", "RUNWAY", "length", "decimal", true),
+                        new PropertyMappingSpec(NS + "Airspace", NS + "airspaceName", "fixture", "AIRSPACE", "airspaceName", "trim", true)),
                 List.of(new RelationshipMappingSpec(NS + "hasRunway", NS + "Airport", NS + "Runway", "fixture",
-                        "airportCode", "runwayCode", "fixture explicit reference")));
+                        "RUNWAY", "airportCode", "runwayCode", "fixture explicit reference")));
 
         DeterministicIdentityResolver ids = new DeterministicIdentityResolver(NS);
         DefaultMappingEngine mapping = new DefaultMappingEngine(catalog, ids);
@@ -60,16 +60,16 @@ class SyncFixtureIntegrationTest {
         assertEquals(20, store.stats().getEntityCount());
         assertEquals(11, store.stats().getRelationshipCount());
 
-        String z001 = ids.entityUid(airport, "Z001");
-        String z002 = ids.entityUid(airport, "Z002");
-        String runwayUid = ids.entityUid(runway, "Z001-01/19");
+        String z001 = ids.entityUid(airport.getClassIri(), "Z001");
+        String z002 = ids.entityUid(airport.getClassIri(), "Z002");
+        String runwayUid = ids.entityUid(runway.getClassIri(), "Z001-01/19");
         assertTrue(String.valueOf(store.findEntity(z001).orElseThrow().getProperties().get(NS + "nameZh")).endsWith("-已更新"));
         assertTrue(store.relationships().stream().anyMatch(r -> r.getSourceUid().equals(z002) && r.getTargetUid().equals(runwayUid)));
         assertFalse(store.relationships().stream().anyMatch(r -> r.getSourceUid().equals(z001) && r.getTargetUid().equals(runwayUid)));
 
-        String insertedAirport = ids.entityUid(airport, "Z999");
+        String insertedAirport = ids.entityUid(airport.getClassIri(), "Z999");
         assertTrue(store.findEntity(insertedAirport).isPresent());
-        String insertedRunway = ids.entityUid(runway, "Z999-01/19");
+        String insertedRunway = ids.entityUid(runway.getClassIri(), "Z999-01/19");
         assertTrue(store.findEntity(insertedRunway).isPresent());
         assertTrue(store.relationships().stream().anyMatch(r ->
                 r.getSourceUid().equals(insertedAirport) && r.getTargetUid().equals(insertedRunway)));

@@ -78,9 +78,11 @@ public final class Phase2Neo4jCheckMain {
             EntityMappingSpec airport = catalog.uniqueEntityMapping("fixture", NS + "Airport").orElseThrow();
             EntityMappingSpec route = catalog.uniqueEntityMapping("fixture", NS + "Route").orElseThrow();
             EntityMappingSpec node = catalog.uniqueEntityMapping("fixture", NS + "RouteNode").orElseThrow();
-            String z001 = ids.entityUid(airport, "Z001"), z002 = ids.entityUid(airport, "Z002");
-            String r001 = ids.entityUid(route, "R001");
-            String r001n001 = ids.entityUid(node, "R001:N001"), r001n006 = ids.entityUid(node, "R001:N006");
+            String z001 = ids.entityUid(airport.getClassIri(), "Z001"),
+                    z002 = ids.entityUid(airport.getClassIri(), "Z002");
+            String r001 = ids.entityUid(route.getClassIri(), "R001");
+            String r001n001 = ids.entityUid(node.getClassIri(), "R001:N001"),
+                    r001n006 = ids.entityUid(node.getClassIri(), "R001:N006");
             GraphDTO z001OneHop = query.query(new QuerySpec(QuerySpec.Type.NEIGHBORS, z001, null, 1, Set.of(), Set.of(), QuerySpec.Direction.BOTH, null, Map.of()));
             GraphDTO z002OneHop = query.query(new QuerySpec(QuerySpec.Type.NEIGHBORS, z002, null, 1, Set.of(), Set.of(), QuerySpec.Direction.BOTH, null, Map.of()));
             GraphDTO r001TwoHop = query.query(new QuerySpec(QuerySpec.Type.K_HOP, r001, null, 2, Set.of(), Set.of(), QuerySpec.Direction.BOTH, null, Map.of()));

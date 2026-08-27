@@ -9,7 +9,7 @@
 当时已实现：
 
 - `JenaOntologyService`：读取唯一现行 TTL，提取 Class、DatatypeProperty、ObjectProperty、label、domain/range、subClassOf。
-- `PoiMappingRegistry`：读取三张人工映射表；新增本体项刷新为 `[待映射]`；不覆盖已填内容；未知/失效映射显式报错。
+- `PoiMappingRegistry`（当时）：读取三张人工映射表，并把新增本体项刷新为 `[待映射]`。当前实现已改为保持三张正式表只含启用 Mapping，并重建独立“本体参考”；详见 `mapping/README.md`。
 - `DeterministicIdentityResolver`：使用项目命名空间 + URI 编码生成稳定 UID，不依赖 Neo4j 内部 ID。
 - `DefaultMappingEngine`：领域无关执行实体、属性和源记录中明确定位字段的关系映射。
 - Fixture/CSV 测试链：证明测试数据经过 SourceAdapter/MappingEngine 主链。

@@ -242,7 +242,7 @@ SLF4J/Log4j provider warning：
   sourceId      本物理源的稳定技术标识；mapping 工作簿必须写完全相同的值，例如 excel-main。
   adapter       固定写 excel。
   root          相对项目根目录的文件目录；不要把 XLSX 放项目根目录。
-  route-node    sourceObject 名；mapping 的“源记录类型/表/Sheet”和“源对象”列引用这个值。
+  route-node    sourceObject 名；mapping 三张正式 Sheet 的 sourceObject 列引用这个值。
   files         相对 root 的 glob。航路1.xlsx/航路2.xlsx 同结构时用 "航路*.xlsx"，不要拆两套配置。
   sheet         精确 Sheet 名，或从 1 开始的序号。
   headerRow     从 1 开始的表头行，默认 1。
@@ -265,7 +265,7 @@ SLF4J/Log4j provider warning：
   orderBy: 序号
 
 files、sheet、headerRow、keyFields、groupBy、orderBy 都是物理读取规则，不是本体语义。
-keyFields 只决定 SourceRecord.sourceKey；最终实体 UID 由字段映射.xlsx 的业务主键和 UID规则决定。
+keyFields 只决定 SourceRecord.sourceKey；最终实体 UID 固定由实体 Class IRI 和字段映射.xlsx 的业务主键值决定。
 不要用文件名、路径、Sheet 名或物理行号作为实体业务主键。
 
 下一条命令必须显式指定正式配置，因为无参数 source-preview 会优先读取 sources.local.yaml：
@@ -353,14 +353,13 @@ urn:atm-knowledge-graph:routeName。
 1. 先在 ontology\atm_knowledge_graph.ttl 搜索 routeName。已存在就不要新增 TTL 定义。
 2. 打开 mapping\字段映射.xlsx 的“属性映射”Sheet，复制同一个实体类的相邻行，填写：
 
-     实体类       urn:atm-knowledge-graph:Route
-     本体属性     urn:atm-knowledge-graph:routeName
-     中文含义     路线名称
-     sourceId     与 config/sources.yaml 完全一致，例如 excel-main
-     源对象       objects 下的键，例如 route-parent
-     源字段/路径  SourceRecord 中的字段，例如 route_name；相邻模式可写 current.字段 或 next.字段
-     必要转换     留空，或仅使用 trim/upper/lower/integer/long/decimal/boolean
-     是否必填     true 或 false
+     sourceId      与 config/sources.yaml 完全一致，例如 excel-main
+     sourceObject  objects 下的键，例如 route-parent
+     实体类        urn:atm-knowledge-graph:Route
+     源字段/路径   SourceRecord 中的字段，例如 route_name；相邻模式可写 current.字段 或 next.字段
+     本体属性      urn:atm-knowledge-graph:routeName
+     转换          留空，或仅使用 trim/upper/lower/integer/long/decimal/boolean
+     必填          是或否
 
 3. 先明确指定一个 sourceObject 查看 mapping 结果，Excel/JDBC 命令相同：
 
@@ -393,11 +392,10 @@ JDBC 连接失败时核对 config\sources.yaml 的 driver/url/table-or-view/keyF
 2. 在唯一正式 TTL 中增加 Class，并根据已确认语义选择父类。不要创建第二份运行时 TTL。
 3. 打开 mapping\字段映射.xlsx 的“实体映射”Sheet，新增一行：
 
-     实体类                 新 Class 的完整 IRI
-     权威数据源 sourceId    config/sources.yaml 中的 sourceId
-     源记录类型/表/Sheet    objects 下的 sourceObject 键，不是 files/table/sheet 的值
-     业务主键               SourceRecord 中稳定字段路径
-     UID规则                class-local-business-key
+     sourceId      config/sources.yaml 中的 sourceId
+     sourceObject  objects 下的键，不是 files/table/sheet 的值
+     实体类        新 Class 的完整 IRI
+     业务主键      SourceRecord 中稳定字段路径
 
 4. 在“属性映射”Sheet 至少映射业务键和需要的显示属性。
 5. Excel/JDBC 都先明确指定目标入口预览：
@@ -427,21 +425,19 @@ JDBC 连接失败时核对 config\sources.yaml 的 driver/url/table-or-view/keyF
 
 2. 打开 mapping\字段映射.xlsx 的“关系映射”Sheet，新增一行：
 
-     关系类型       object property 完整 IRI
-     起点类         domain 对应 Class IRI
-     终点类         range 对应 Class IRI
-     sourceId       产生这条关系的 SourceRecord.sourceId
-     起点定位字段   SourceRecord 中能得到起点业务键的路径
-     终点定位字段   SourceRecord 中能得到终点业务键的路径
-     说明           人工解释来源和方向
+     sourceId        产生这条关系的 SourceRecord.sourceId
+     sourceObject    产生这条关系的 SourceRecord.objectName
+     关系类型        object property 完整 IRI
+     起点类          domain 对应 Class IRI
+     起点引用字段    当前关系事实 SourceRecord 中存放起点业务键值的路径
+     终点类          range 对应 Class IRI
+     终点引用字段    当前关系事实 SourceRecord 中存放终点业务键值的路径
+     说明            人工解释来源和方向
 
-3. 确认同一 sourceId 下，起点类和终点类都已有“实体映射”行，且同一 class 的多条实体映射使用
-   相同 UID规则 class-local-business-key。起终点定位字段可以来自 current.x / next.x。
-   实体映射、属性映射按 sourceId + sourceObject 选择；但当前“关系映射”只有 sourceId，没有
-   sourceObject 列。DefaultMappingEngine 对每条 SourceRecord 会执行该 sourceId 下全部关系映射，
-   是否真的产生关系只由起点/终点 locator 是否读到值决定。
-   因此同一 sourceId 下多个 object 若出现相同 locator 字段名，必须逐个 object 核对，不能误以为
-   关系行只属于其中一个 object。本轮不要给 workbook 增 sourceObject 列，也不要修改 MappingEngine 行为。
+3. 实体、属性和关系映射都按 sourceId + sourceObject 选择。关系来源不需要同时配置起点/终点实体
+   mapping；端点 canonical UID 固定由关系行中的端点 Class IRI + 当前记录引用值生成。引用字段可来自
+   current.x / next.x，但它们不是跨表 join 定义。端点实体仍必须通过其各自权威来源先写入图，GraphStore
+   会检查端点存在性和 TTL domain/range。
 4. 执行：
 
      mvn.cmd test
@@ -656,8 +652,7 @@ Excel 分支：
 3. 打开 mapping\字段映射.xlsx：
 
    “实体映射”必须有相同 sourceId + sourceObject；
-   “业务主键”必须是刚才 SourceRecord 中真实存在的字段路径；
-   “UID规则”使用 class-local-business-key。
+   “业务主键”必须是刚才 SourceRecord 中真实存在的字段路径。
 
 4. “属性映射”的 sourceId、源对象、源字段/路径必须逐字匹配。
 5. 正常应打印至少一个实体 UID；有关系时端点 UID 也应出现。
@@ -722,7 +717,7 @@ A. 新增普通 datatype property
 
        mvn.cmd -q -DskipTests compile org.codehaus.mojo:exec-maven-plugin:3.5.0:java "-Dexec.mainClass=org.atmkg.tools.Phase1CheckMain" "-Dexec.args=--refresh"
 
-  3. 在字段映射.xlsx 的“属性映射”中补齐新增的 [待映射] 行；
+  3. 在字段映射.xlsx 的“本体参考”确认新增术语，再向“属性映射”新增一条实际 Mapping；
   4. 运行 Phase1CheckMain（不带 --refresh），确认正式 Mapping 校验通过：
 
        mvn.cmd -q -DskipTests compile org.codehaus.mojo:exec-maven-plugin:3.5.0:java "-Dexec.mainClass=org.atmkg.tools.Phase1CheckMain"
@@ -732,19 +727,19 @@ A. 新增普通 datatype property
   6. 对受影响 sourceObject 执行 resync 或 fullSync；
   7. 用 tools\review.cmd 检查结果。
 
-  refresh 只追加缺失术语，不覆盖人工已填内容，也不会把 [待映射] 当正式 Mapping。普通属性新增
-  不需要修改 DefaultMappingEngine、Neo4jGraphStore 或 QueryService。
+  refresh 只重建“本体参考”，不会向三张正式 Mapping Sheet 追加行，也不会覆盖人工已填内容。
+  普通属性新增不需要修改 DefaultMappingEngine、Neo4jGraphStore 或 QueryService。
 
 B. 新增普通实体或关系
 
-  基本步骤与 A 相同。新增实体还要人工确认业务主键、UID规则和 sourceId/sourceObject；新增关系还要
-  人工确认起点类、终点类、locator 以及 TTL 中的 domain/range。不要自动猜。
+  基本步骤与 A 相同。新增实体还要人工确认业务主键和 sourceId/sourceObject；新增关系还要人工确认
+  关系事实来源 sourceId/sourceObject、起点类、终点类、引用字段以及 TTL 中的 domain/range。不要自动猜。
 
 C. 删除或改名 Class / Property
 
   refresh 不会自动删除旧 Mapping，也不会自动改名。旧完整 IRI 失效后应由 Mapping 校验明确报错，
   人工确认后再修改或删除对应行。然后重启服务并重新同步受影响数据；变化范围很大、删除大量 Mapping
-  或无法可靠判断范围时，确认 sources.yaml 完整后再使用 fullRebuild。不要开发自动 Mapping migration。
+  或无法可靠判断范围时，确认 sources.yaml 完整后再使用 fullRebuild。
 
   Mapping 删除某属性或关系后，需要重新同步对应源记录，replaceProjection 才会清掉该 SourceRef
   不再生成的旧属性或旧关系。
@@ -770,8 +765,7 @@ E. 删除 sourceObject / 数据源
 
   - sourceId 可以相同；
   - sourceObject 分别写 airport-base、airport-position；
-  - 业务主键字段名可以不同，但值必须都表达同一个稳定机场代码 ZBAA；
-  - UID规则必须都为 class-local-business-key。
+  - 业务主键字段名可以不同，但值必须都表达同一个稳定机场代码 ZBAA。
 
 同步后 Neo4jGraphStore 为 (entityUid, SourceRef) 保存 KGEntityContribution，并合成一个 KGEntity。
 相同属性相同值允许；同一属性不同值会显式报冲突并回滚，不会“后写覆盖前写”。

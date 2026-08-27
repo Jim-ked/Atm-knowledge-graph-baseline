@@ -13,8 +13,11 @@ import org.atmkg.core.model.SourceRecord;
 import org.atmkg.core.model.mapping.EntityMappingSpec;
 import org.atmkg.core.model.mapping.MappingCatalog;
 import org.atmkg.core.spi.SourceAdapter;
+import org.atmkg.fixture.SourcePreviewMappingWorkbookGenerator;
 import org.atmkg.infra.identity.DeterministicIdentityResolver;
 import org.atmkg.infra.mapping.DefaultMappingEngine;
+import org.atmkg.infra.mapping.PoiMappingRegistry;
+import org.atmkg.infra.ontology.JenaOntologyService;
 import org.atmkg.infra.source.config.ConfiguredSource;
 import org.atmkg.infra.source.config.SourceConfig;
 import org.junit.jupiter.api.Test;
@@ -28,7 +31,7 @@ class SourceMappingPreviewMainTest {
         String classIri = "urn:atm-knowledge-graph:Route";
         MappingCatalog catalog = new MappingCatalog(
                 List.of(new EntityMappingSpec(
-                        classIri, "jdbc-main", "route", "routeCode", "class-local-business-key")),
+                        classIri, "jdbc-main", "route", "routeCode")),
                 List.of(), List.of());
         DefaultMappingEngine engine = new DefaultMappingEngine(
                 catalog, new DeterministicIdentityResolver("urn:test:preview:"));
@@ -42,6 +45,20 @@ class SourceMappingPreviewMainTest {
         assertEquals(classIri, results.get(0).getEntities().get(0).getClassIri());
         assertEquals("urn:test:preview:entity:urn%3Aatm-knowledge-graph%3ARoute:R001",
                 results.get(0).getEntities().get(0).getUid());
+    }
+
+    @Test
+    void defaultPreviewWorkbookGeneratorUsesCurrentMappingContract() {
+        Path workbook = temp.resolve("source-preview-mapping.xlsx");
+        SourcePreviewMappingWorkbookGenerator.generate(workbook);
+
+        MappingCatalog catalog = new PoiMappingRegistry().load(
+                workbook,
+                new JenaOntologyService().load(Path.of("ontology/atm_knowledge_graph.ttl")));
+
+        assertEquals(12, catalog.getRelationships().size());
+        assertEquals(1, catalog.relationshipMappingsFor(
+                "preview-route-node", "route-node").size());
     }
 
     private ConfiguredSource jdbcSource() throws Exception {

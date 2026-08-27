@@ -39,10 +39,10 @@ public final class MappingCatalog {
         return out;
     }
 
-    public List<RelationshipMappingSpec> relationshipMappingsFor(String sourceId) {
+    public List<RelationshipMappingSpec> relationshipMappingsFor(String sourceId, String sourceObject) {
         List<RelationshipMappingSpec> out = new ArrayList<>();
         for (RelationshipMappingSpec spec : relationships) {
-            if (spec.getSourceId().equals(sourceId)) out.add(spec);
+            if (spec.getSourceId().equals(sourceId) && spec.getSourceObject().equals(sourceObject)) out.add(spec);
         }
         return out;
     }
@@ -57,20 +57,4 @@ public final class MappingCatalog {
         return Optional.ofNullable(found);
     }
 
-    /**
-     * Resolves one representative mapping for entity identity calculation.
-     * Multiple physical source objects are compatible when they use the same UID rule.
-     */
-    public Optional<EntityMappingSpec> compatibleEntityMapping(String sourceId, String classIri) {
-        EntityMappingSpec representative = null;
-        for (EntityMappingSpec spec : entities) {
-            if (!spec.getSourceId().equals(sourceId) || !spec.getClassIri().equals(classIri)) continue;
-            if (representative == null) {
-                representative = spec;
-            } else if (!Objects.equals(representative.getUidRule(), spec.getUidRule())) {
-                return Optional.empty();
-            }
-        }
-        return Optional.ofNullable(representative);
-    }
 }

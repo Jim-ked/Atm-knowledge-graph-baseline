@@ -26,7 +26,7 @@ class MappingIriResolverTest {
 
         assertEquals("urn:old:Airport", resolved);
         MappingCatalog catalog = new MappingCatalog(
-                List.of(new EntityMappingSpec(resolved, "source", "airport", "airportCode", "class-local-business-key")),
+                List.of(new EntityMappingSpec(resolved, "source", "airport", "airportCode")),
                 List.of(),
                 List.of());
         MappingValidationException error = assertThrows(
@@ -61,7 +61,7 @@ class MappingIriResolverTest {
         MappingCatalog catalog = new MappingCatalog(
                 List.of(),
                 List.of(new PropertyMappingSpec(
-                        classIri, resolved, "机场名称", "source", "airport", "airportName", "", false)),
+                        classIri, resolved, "source", "airport", "airportName", "", false)),
                 List.of());
 
         assertEquals("urn:old:airportName", resolved);

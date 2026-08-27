@@ -20,10 +20,10 @@ class DefaultMappingEngineTest {
 
     @Test
     void mapsEntitiesPropertiesAndExplicitRelationshipLocatorsWithoutDomainBranches() {
-        EntityMappingSpec airport = new EntityMappingSpec(NS + "Airport", "fixture", "AIRPORT", "airportCode", "businessKey");
-        EntityMappingSpec runway = new EntityMappingSpec(NS + "Runway", "fixture", "RUNWAY", "runwayCode", "businessKey");
-        PropertyMappingSpec length = new PropertyMappingSpec(NS + "Runway", NS + "length", "跑道长度", "fixture", "RUNWAY", "length", "decimal", true);
-        RelationshipMappingSpec hasRunway = new RelationshipMappingSpec(NS + "hasRunway", NS + "Airport", NS + "Runway", "fixture", "airportCode", "runwayCode", "");
+        EntityMappingSpec airport = new EntityMappingSpec(NS + "Airport", "fixture", "AIRPORT", "airportCode");
+        EntityMappingSpec runway = new EntityMappingSpec(NS + "Runway", "fixture", "RUNWAY", "runwayCode");
+        PropertyMappingSpec length = new PropertyMappingSpec(NS + "Runway", NS + "length", "fixture", "RUNWAY", "length", "decimal", true);
+        RelationshipMappingSpec hasRunway = new RelationshipMappingSpec(NS + "hasRunway", NS + "Airport", NS + "Runway", "fixture", "RUNWAY", "airportCode", "runwayCode", "");
         MappingCatalog catalog = new MappingCatalog(List.of(airport, runway), List.of(length), List.of(hasRunway));
         DefaultMappingEngine engine = new DefaultMappingEngine(catalog, new DeterministicIdentityResolver("urn:test:kg:"));
 
@@ -38,15 +38,15 @@ class DefaultMappingEngineTest {
     }
 
     @Test
-    void resolvesCompatibleIdentityAcrossMultipleSourceObjects() {
+    void resolvesCanonicalIdentityAcrossDifferentSources() {
         EntityMappingSpec airportBase = new EntityMappingSpec(
-                NS + "Airport", "fixture", "airport-base", "airport_code", "businessKey");
+                NS + "Airport", "source-A", "airport-base", "airport_code");
         EntityMappingSpec airportPosition = new EntityMappingSpec(
-                NS + "Airport", "fixture", "airport-position", "position_airport_code", "businessKey");
+                NS + "Airport", "source-B", "airport-position", "position_airport_code");
         EntityMappingSpec runway = new EntityMappingSpec(
-                NS + "Runway", "fixture", "runway", "runway_code", "businessKey");
+                NS + "Runway", "source-B", "runway", "runway_code");
         RelationshipMappingSpec hasRunway = new RelationshipMappingSpec(
-                NS + "hasRunway", NS + "Airport", NS + "Runway", "fixture",
+                NS + "hasRunway", NS + "Airport", NS + "Runway", "source-C", "AIRPORT_RUNWAY_REL",
                 "airport_code", "runway_code", "");
         MappingCatalog catalog = new MappingCatalog(
                 List.of(airportBase, airportPosition, runway), List.of(), List.of(hasRunway));
@@ -54,27 +54,31 @@ class DefaultMappingEngineTest {
                 catalog, new DeterministicIdentityResolver("urn:test:kg:"));
 
         MappingResult base = engine.map(new SourceRecord(
-                "fixture", "airport-base", "ZBAA", Map.of("airport_code", "ZBAA"), null));
+                "source-A", "airport-base", "ZBAA", Map.of("airport_code", "ZBAA"), null));
         MappingResult position = engine.map(new SourceRecord(
-                "fixture", "airport-position", "ZBAA", Map.of("position_airport_code", "ZBAA"), null));
-        MappingResult runwayResult = engine.map(new SourceRecord(
-                "fixture", "runway", "RWY01",
+                "source-B", "airport-position", "ZBAA", Map.of("position_airport_code", "ZBAA"), null));
+        MappingResult relationResult = engine.map(new SourceRecord(
+                "source-C", "AIRPORT_RUNWAY_REL", "ZBAA|RWY01",
                 Map.of("runway_code", "RWY01", "airport_code", "ZBAA"), null));
 
-        assertTrue(catalog.compatibleEntityMapping("fixture", NS + "Airport").isPresent());
         assertEquals(base.getEntities().get(0).getUid(), position.getEntities().get(0).getUid());
         assertEquals(base.getEntities().get(0).getUid(),
-                runwayResult.getRelationships().get(0).getSourceUid());
+                relationResult.getRelationships().get(0).getSourceUid());
     }
 
     @Test
-    void rejectsMultipleEntityMappingsWithDifferentUidRules() {
-        EntityMappingSpec first = new EntityMappingSpec(
-                NS + "Airport", "fixture", "airport-base", "airport_code", "rule-a");
-        EntityMappingSpec second = new EntityMappingSpec(
-                NS + "Airport", "fixture", "airport-position", "airport_code", "rule-b");
-        MappingCatalog catalog = new MappingCatalog(List.of(first, second), List.of(), List.of());
+    void relationshipMappingOnlyRunsForItsSourceObject() {
+        RelationshipMappingSpec hasRunway = new RelationshipMappingSpec(
+                NS + "hasRunway", NS + "Airport", NS + "Runway", "fixture", "runway-rel",
+                "airport_code", "runway_code", "");
+        MappingCatalog catalog = new MappingCatalog(List.of(), List.of(), List.of(hasRunway));
+        DefaultMappingEngine engine = new DefaultMappingEngine(
+                catalog, new DeterministicIdentityResolver("urn:test:kg:"));
 
-        assertTrue(catalog.compatibleEntityMapping("fixture", NS + "Airport").isEmpty());
+        MappingResult unrelated = engine.map(new SourceRecord(
+                "fixture", "another-object", "1",
+                Map.of("airport_code", "ZBAA", "runway_code", "RWY01"), null));
+
+        assertTrue(unrelated.getRelationships().isEmpty());
     }
 }

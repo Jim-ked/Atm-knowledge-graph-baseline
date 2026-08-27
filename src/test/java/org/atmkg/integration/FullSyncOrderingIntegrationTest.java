@@ -26,13 +26,14 @@ class FullSyncOrderingIntegrationTest {
         CsvFixtureSourceAdapter source = new CsvFixtureSourceAdapter(
                 "fixture", root, Map.of("ROUTE_NODE", "nodeKey"));
         EntityMappingSpec node = new EntityMappingSpec(
-                NS + "RouteNode", "fixture", "ROUTE_NODE", "nodeKey", "businessKey");
+                NS + "RouteNode", "fixture", "ROUTE_NODE", "nodeKey");
         MappingCatalog catalog = new MappingCatalog(
                 List.of(node),
-                List.of(new PropertyMappingSpec(NS + "RouteNode", NS + "sequenceNumber", "", "fixture",
+                List.of(new PropertyMappingSpec(NS + "RouteNode", NS + "sequenceNumber", "fixture",
                         "ROUTE_NODE", "sequenceNumber", "integer", true)),
                 List.of(new RelationshipMappingSpec(NS + "nextNode", NS + "RouteNode", NS + "RouteNode",
-                        "fixture", "nodeKey", "nextNodeKey", "explicit next-node fixture reference")));
+                        "fixture", "ROUTE_NODE", "nodeKey", "nextNodeKey",
+                        "explicit next-node fixture reference")));
         InMemoryGraphStore store = new InMemoryGraphStore();
         DefaultSyncService sync = new DefaultSyncService(Map.of("fixture", source),
                 new DefaultMappingEngine(catalog, new DeterministicIdentityResolver(NS)), store);
@@ -47,12 +48,12 @@ class FullSyncOrderingIntegrationTest {
         Path root = Path.of("fixtures/generated/small");
         CsvFixtureSourceAdapter source = new CsvFixtureSourceAdapter(
                 "fixture", root, Map.of("AIRPORT", "airportCode", "RUNWAY", "runwayCode"));
-        EntityMappingSpec airport = new EntityMappingSpec(NS + "Airport", "fixture", "AIRPORT", "airportCode", "businessKey");
-        EntityMappingSpec runway = new EntityMappingSpec(NS + "Runway", "fixture", "RUNWAY", "runwayCode", "businessKey");
+        EntityMappingSpec airport = new EntityMappingSpec(NS + "Airport", "fixture", "AIRPORT", "airportCode");
+        EntityMappingSpec runway = new EntityMappingSpec(NS + "Runway", "fixture", "RUNWAY", "runwayCode");
         MappingCatalog catalog = new MappingCatalog(
                 List.of(airport, runway), List.of(),
                 List.of(new RelationshipMappingSpec(NS + "hasRunway", NS + "Airport", NS + "Runway",
-                        "fixture", "airportCode", "runwayCode", "explicit fixture reference")));
+                        "fixture", "RUNWAY", "airportCode", "runwayCode", "explicit fixture reference")));
         InMemoryGraphStore store = new InMemoryGraphStore();
         DefaultSyncService sync = new DefaultSyncService(Map.of("fixture", source),
                 new DefaultMappingEngine(catalog, new DeterministicIdentityResolver(NS)), store);
