@@ -102,12 +102,13 @@ class KgApiServerTest {
         HttpResponse<String> allClasses = post("/entities/lookup", "{\"key\":\"ZBAA\"}");
         HttpResponse<String> missing = post("/entities/lookup", "{\"key\":\"missing\"}");
         HttpResponse<String> oneClass = post("/entities/lookup",
-                "{\"key\":\"ZBAA\",\"classIri\":\"urn:test:Airport\"}");
+                "{\"key\":\"  ZBAA  \",\"classIri\":\"  urn:test:Airport  \"}");
         HttpResponse<String> unknown = post("/entities/lookup", "{\"key\":\"ZBAA\",\"uid\":\"wrong\"}");
 
         assertEquals(200, allClasses.statusCode());
         assertEquals("ZBAA", json(allClasses).get("nodes").get(0).get("caption").asText());
         assertEquals(200, oneClass.statusCode());
+        assertEquals("ZBAA", entityLookupService.lastKey);
         assertEquals("urn:test:Airport", entityLookupService.lastClassIri);
         assertEquals(200, missing.statusCode());
         assertEquals(0, json(missing).get("nodes").size());

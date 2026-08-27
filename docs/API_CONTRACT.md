@@ -40,11 +40,11 @@ K_HOP
 PATH
 ```
 
-`/entities/lookup` 只接受 `{ "key": "ZBAA" }` 或额外提供可选 `classIri`。它按当前 project 的 canonical `KGEntity.kg_caption` 做大小写不敏感的精确业务键匹配，不做 contains、全文搜索、Class 猜测、fallback 或输入改写；返回 GraphDTO，空结果是 200，超过 50 项显式返回 `RESULT_TOO_LARGE`。内部 ENTITY / NEIGHBORS / K_HOP / PATH 仍严格使用稳定 UID。
+`/entities/lookup` 只接受 `{ "key": "ZBAA" }` 或额外提供可选 `classIri`。`key`、`classIri` 去除首尾空白后传入定位服务；服务按当前 project 的 canonical `KGEntity.kg_caption` 去除首尾空白后做大小写不敏感的精确业务键匹配，不做 contains、全文搜索、Class 猜测、fallback 或其它输入改写。返回 GraphDTO，空结果是 200，超过 50 项显式返回 `RESULT_TOO_LARGE`。内部 ENTITY / NEIGHBORS / K_HOP / PATH 仍严格使用稳定 UID。
 
 `/graph/named` 只接受 `{ "queryId": "...", "startUid": "..." }`，构造已有 `QuerySpec.Type.NAMED` 后继续交给 `TemplateAwareQueryService` / `QueryTemplateRegistry`，不接受 raw Cypher。
 
-`/graph/cypher` 只接受 `{ "cypher": "MATCH ... RETURN ..." }`。服务端先执行 Neo4j 官方 `EXPLAIN`，仅当 `ResultSummary.queryType()` 为 `QueryType.READ_ONLY` 时才执行原查询，并额外使用 `AccessMode.READ` 会话。输入 `EXPLAIN`/`PROFILE` 会明确拒绝；该入口不接受 params、raw 查询模板或写操作。响应为 `CypherResultDTO`：`schemaVersion`、有序 `columns`、JSON-safe `rows`、`graph` 和 `meta`。标量/表格查询正常返回 rows 和空 GraphDTO；Node、Relationship、Path 及其 List/Map 嵌套值会同时进入 rows，并在满足 canonical 图投影条件时进入 graph。表格超过固定 1000 行会显式返回 `RESULT_TOO_LARGE`，不静默截断。
+`/graph/cypher` 只接受 `{ "cypher": "MATCH ... RETURN ..." }`。服务端先执行 Neo4j 官方 `EXPLAIN`，仅当 `ResultSummary.queryType()` 为 `QueryType.READ_ONLY` 时才执行原查询，并额外使用 `AccessMode.READ` 会话。输入 `EXPLAIN`/`PROFILE` 会明确拒绝；该入口不接受 params、raw 查询模板或写操作。响应为 `CypherResultDTO`：`schemaVersion`、有序 `columns`、JSON-safe `rows`、`graph` 和 `meta`。标量/表格查询正常返回 rows 和空 GraphDTO；Node、Relationship、Path 及其 List/Map 嵌套值会同时进入 rows，并在满足 canonical 图投影条件时进入 graph。Node/Relationship 的结构化 rows 仅在存在 `kg_uid` 时输出 `uid`，不输出 Neo4j internal elementId 或关系端点 elementId。表格超过固定 1000 行会显式返回 `RESULT_TOO_LARGE`，不静默截断。
 
 `/schema` 保留 `schemaVersion`、`classes`、`objectProperties`，并增加 `datatypeProperties`、`classLabels`、`datatypePropertyLabels`、`objectPropertyLabels`。label 缺失时统一回退为 IRI localName。
 

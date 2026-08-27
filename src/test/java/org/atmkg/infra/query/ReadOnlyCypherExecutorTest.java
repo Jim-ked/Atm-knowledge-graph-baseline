@@ -1,10 +1,12 @@
 package org.atmkg.infra.query;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -66,12 +68,13 @@ class ReadOnlyCypherExecutorTest {
         Map<?, ?> tableNode = assertInstanceOf(Map.class, result.getRows().get(0).get("n"));
         assertEquals("node", tableNode.get("type"));
         assertEquals("airport-1", tableNode.get("uid"));
+        assertFalse(tableNode.containsKey("id"));
         assertEquals(List.of("airport-1"), result.getGraph().getNodes().stream().map(n -> n.getId()).toList());
         assertEquals("2026-08-28", result.getGraph().getNodes().get(0).getProperties().get("observedOn"));
     }
 
     @Test
-    void returnedPathAppearsInBothRowsAndCompleteGraph() {
+    void returnedPathAppearsInBothRowsAndCompleteGraphWithoutExposingElementIds() throws Exception {
         Node airport = node(1, "n1", "airport-1", "urn:test:Airport", "ZBAA");
         Node runway = node(2, "n2", "runway-1", "urn:test:Runway", "RWY01");
         Relationship relationship = relationship(airport, runway);
@@ -82,6 +85,11 @@ class ReadOnlyCypherExecutorTest {
 
         Map<?, ?> tablePath = assertInstanceOf(Map.class, result.getRows().get(0).get("p"));
         assertEquals("path", tablePath.get("type"));
+        String serializedRows = new ObjectMapper().writeValueAsString(result.getRows());
+        assertFalse(serializedRows.contains("\"id\""));
+        assertFalse(serializedRows.contains("\"elementId\""));
+        assertFalse(serializedRows.contains("\"startElementId\""));
+        assertFalse(serializedRows.contains("\"endElementId\""));
         assertEquals(2, result.getGraph().getNodes().size());
         assertEquals(1, result.getGraph().getRelationships().size());
     }
@@ -108,7 +116,12 @@ class ReadOnlyCypherExecutorTest {
 
         CypherResultDTO result = executor(neo4j).execute("MATCH ()-[r]->() RETURN r LIMIT 1");
 
-        assertEquals("relationship", assertInstanceOf(Map.class, result.getRows().get(0).get("r")).get("type"));
+        Map<?, ?> tableRelationship = assertInstanceOf(Map.class, result.getRows().get(0).get("r"));
+        assertEquals("relationship", tableRelationship.get("type"));
+        assertEquals("rel-1", tableRelationship.get("uid"));
+        assertFalse(tableRelationship.containsKey("id"));
+        assertFalse(tableRelationship.containsKey("startElementId"));
+        assertFalse(tableRelationship.containsKey("endElementId"));
         assertTrue(result.getGraph().getNodes().isEmpty());
         assertTrue(result.getGraph().getRelationships().isEmpty());
     }

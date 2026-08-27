@@ -260,7 +260,6 @@ public final class ReadOnlyCypherExecutor implements ReadOnlyCypherService {
         String uid = uidValue == null || String.valueOf(uidValue).isBlank() ? null : String.valueOf(uidValue);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("type", "node");
-        out.put("id", uid == null ? node.elementId() : uid);
         if (uid != null) out.put("uid", uid);
         List<String> labels = new ArrayList<>();
         node.labels().forEach(labels::add);
@@ -276,11 +275,8 @@ public final class ReadOnlyCypherExecutor implements ReadOnlyCypherService {
         String uid = uidValue == null || String.valueOf(uidValue).isBlank() ? null : String.valueOf(uidValue);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("type", "relationship");
-        out.put("id", uid == null ? relationship.elementId() : uid);
         if (uid != null) out.put("uid", uid);
         out.put("relationshipType", relationship.type());
-        out.put("startElementId", relationship.startNodeElementId());
-        out.put("endElementId", relationship.endNodeElementId());
         out.put("properties", properties);
         return Collections.unmodifiableMap(out);
     }

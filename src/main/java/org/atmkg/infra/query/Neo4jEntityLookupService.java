@@ -25,7 +25,7 @@ public final class Neo4jEntityLookupService implements EntityLookupService {
     private static final String ENTITY_LABEL = "KGEntity";
     private static final String QUERY = "MATCH (n:" + ENTITY_LABEL + " {kg_project: $projectId}) "
             + "WHERE NOT n:KGEntityContribution AND n.kg_caption IS NOT NULL "
-            + "AND toLower(n.kg_caption) = toLower($key) "
+            + "AND toLower(trim(n.kg_caption)) = toLower($key) "
             + "AND ($classIri IS NULL OR n.kg_class_iri = $classIri) "
             + "RETURN properties(n) AS props, labels(n) AS labels "
             + "ORDER BY n.kg_class_iri, n.kg_uid LIMIT $limit";
@@ -110,7 +110,8 @@ public final class Neo4jEntityLookupService implements EntityLookupService {
 
     private static String requireText(String value, String name) {
         if (value == null || value.isBlank()) throw new IllegalArgumentException(name + " 不能为空");
-        if (value.length() > 4096) throw new IllegalArgumentException(name + " 过长");
-        return value;
+        String text = value.trim();
+        if (text.length() > 4096) throw new IllegalArgumentException(name + " 过长");
+        return text;
     }
 }

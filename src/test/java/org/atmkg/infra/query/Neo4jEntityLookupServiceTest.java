@@ -36,7 +36,7 @@ class Neo4jEntityLookupServiceTest {
         assertEquals(AccessMode.READ, neo4j.sessionConfig().defaultAccessMode());
         assertEquals("ZBAA", neo4j.calls().get(0).parameters().get("key"));
         assertEquals(null, neo4j.calls().get(0).parameters().get("classIri"));
-        assertTrue(neo4j.calls().get(0).query().contains("toLower(n.kg_caption) = toLower($key)"));
+        assertTrue(neo4j.calls().get(0).query().contains("toLower(trim(n.kg_caption)) = toLower($key)"));
         assertTrue(neo4j.calls().get(0).query().contains("NOT n:KGEntityContribution"));
         assertTrue(!neo4j.calls().get(0).query().contains("CONTAINS"));
         assertTrue(!neo4j.calls().get(0).query().contains("ZBAA"));
@@ -58,7 +58,7 @@ class Neo4jEntityLookupServiceTest {
     }
 
     @Test
-    void preservesExactInputAndReturnsEmptyGraphForNoMatch() {
+    void trimsBusinessKeyAndClassIriBeforeExactMatch() {
         Neo4jTestDriver neo4j = new Neo4jTestDriver();
         neo4j.enqueue(Neo4jTestDriver.result(QueryType.READ_ONLY));
         Neo4jEntityLookupService service = new Neo4jEntityLookupService(
@@ -68,8 +68,8 @@ class Neo4jEntityLookupServiceTest {
 
         assertTrue(graph.getNodes().isEmpty());
         assertTrue(graph.getRelationships().isEmpty());
-        assertEquals(" ZBAA ", neo4j.calls().get(0).parameters().get("key"));
-        assertEquals(" urn:test:Airport ", neo4j.calls().get(0).parameters().get("classIri"));
+        assertEquals("ZBAA", neo4j.calls().get(0).parameters().get("key"));
+        assertEquals("urn:test:Airport", neo4j.calls().get(0).parameters().get("classIri"));
     }
 
     @Test

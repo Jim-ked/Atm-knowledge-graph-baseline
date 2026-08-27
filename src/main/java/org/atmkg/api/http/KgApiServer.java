@@ -312,8 +312,8 @@ public final class KgApiServer implements AutoCloseable {
         if (entityLookupService == null) throw new QueryExecutionException("实体定位服务未装配");
         requireObject(request);
         rejectUnknown(request, Set.of("key", "classIri"));
-        String key = requiredExactText(request, "key");
-        String classIri = optionalExactText(request, "classIri");
+        String key = requiredText(request, "key");
+        String classIri = optionalText(request, "classIri");
         GraphDTO graph = entityLookupService.lookup(key, classIri);
         try {
             sendBytes(exchange, 200, ApiJson.writeGraph(graph).getBytes(StandardCharsets.UTF_8));
@@ -470,22 +470,6 @@ public final class KgApiServer implements AutoCloseable {
         if (value == null || value.isNull()) return null;
         if (!value.isTextual()) invalid(field + " 必须是字符串");
         return requireText(value.textValue(), field);
-    }
-
-    private String requiredExactText(JsonNode request, String field) {
-        String value = optionalExactText(request, field);
-        if (value == null) invalid(field + " 不能为空");
-        return value;
-    }
-
-    private String optionalExactText(JsonNode request, String field) {
-        JsonNode value = request.get(field);
-        if (value == null || value.isNull()) return null;
-        if (!value.isTextual()) invalid(field + " 必须是字符串");
-        String text = value.textValue();
-        if (text.isBlank()) invalid(field + " 不能为空");
-        if (text.length() > 4096) invalid(field + " 过长");
-        return text;
     }
 
     private Integer requiredDepth(JsonNode request, String field) {
