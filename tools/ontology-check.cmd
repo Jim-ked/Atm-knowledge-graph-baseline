@@ -4,9 +4,9 @@ setlocal EnableExtensions EnableDelayedExpansion
 chcp 65001 >nul
 for %%I in ("%~dp0..") do set "SCRIPT_ROOT=%%~fI"
 set "PROJECT_ROOT=%SCRIPT_ROOT%"
-if defined ATMKG_PROJECT_ROOT if exist "%ATMKG_PROJECT_ROOT%." set "PROJECT_ROOT=%ATMKG_PROJECT_ROOT%"
+if defined ATMKG_PROJECT_ROOT if exist "%ATMKG_PROJECT_ROOT%\." set "PROJECT_ROOT=%ATMKG_PROJECT_ROOT%"
 if exist "%PROJECT_ROOT%\tools\env.cmd" call "%PROJECT_ROOT%\tools\env.cmd"
-if defined ATMKG_PROJECT_ROOT if exist "%ATMKG_PROJECT_ROOT%." set "PROJECT_ROOT=%ATMKG_PROJECT_ROOT%"
+if defined ATMKG_PROJECT_ROOT if exist "%ATMKG_PROJECT_ROOT%\." set "PROJECT_ROOT=%ATMKG_PROJECT_ROOT%"
 set "JAVA_COMMAND="
 if not "%JAVA_HOME%"=="" if exist "%JAVA_HOME%\bin\java.exe" set "JAVA_COMMAND=%JAVA_HOME%\bin\java.exe"
 if not defined JAVA_COMMAND if not "%JAVA_HOME%"=="" if exist "%JAVA_HOME%\java.exe" set "JAVA_COMMAND=%JAVA_HOME%\java.exe"
