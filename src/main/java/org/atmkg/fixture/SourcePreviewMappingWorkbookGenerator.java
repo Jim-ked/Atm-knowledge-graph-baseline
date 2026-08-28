@@ -108,7 +108,6 @@ public final class SourcePreviewMappingWorkbookGenerator {
         property(p, "RouteNode", "nodeCode", sourceId, object, prefix + "节点代码", "", false);
         property(p, "RouteNode", "nodeName", sourceId, object, prefix + "节点名称", "", false);
         property(p, "RouteNode", "nodeTypeCode", sourceId, object, prefix + "节点类型", "", false);
-        property(p, "RouteNode", "sequenceNumber", sourceId, object, prefix + "序号", "integer", true);
         property(p, "RouteNode", "longitude", sourceId, object, prefix + "经度", "decimal", false);
         property(p, "RouteNode", "latitude", sourceId, object, prefix + "纬度", "decimal", false);
     }
@@ -117,7 +116,6 @@ public final class SourcePreviewMappingWorkbookGenerator {
         property(p, "RouteNode", "nodeCode", sourceId, object, prefix + "点代码", "", false);
         property(p, "RouteNode", "nodeName", sourceId, object, prefix + "点名称", "", false);
         property(p, "RouteNode", "nodeTypeCode", sourceId, object, prefix + "点类型", "", false);
-        property(p, "RouteNode", "sequenceNumber", sourceId, object, prefix + "序号", "integer", true);
         property(p, "RouteNode", "longitude", sourceId, object, prefix + "经度", "decimal", false);
         property(p, "RouteNode", "latitude", sourceId, object, prefix + "纬度", "decimal", false);
     }

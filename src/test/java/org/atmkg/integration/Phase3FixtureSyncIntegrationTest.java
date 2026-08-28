@@ -67,7 +67,6 @@ class Phase3FixtureSyncIntegrationTest {
         String changedRunway = ids.entityUid(runway.getClassIri(), "Z001-01/19");
         String insertedRunway = ids.entityUid(runway.getClassIri(), "Z999-01/19");
         String changedNode = ids.entityUid(routeNode.getClassIri(), "R003:N005");
-        String oldNextNode = ids.entityUid(routeNode.getClassIri(), "R003:N006");
         String missedReportingPoint = ids.entityUid(reportingPoint.getClassIri(), "RPT002");
         String deletedControlArea = ids.entityUid(controlArea.getClassIri(), "CTA003");
         assertRelationship(store, NS + "hasRunway", z001, changedRunway, true);
@@ -87,7 +86,6 @@ class Phase3FixtureSyncIntegrationTest {
         assertRelationship(store, NS + "hasRunway", z001, changedRunway, false);
         GraphEntity node = store.findEntity(changedNode).orElseThrow();
         assertFalse(node.getProperties().containsKey(NS + "nodeName"));
-        assertRelationship(store, NS + "nextNode", changedNode, oldNextNode, false);
         assertTrue(store.findEntity(deletedControlArea).isEmpty());
         assertEquals("模拟报告点2", store.findEntity(missedReportingPoint).orElseThrow()
                 .getProperties().get(NS + "reportingPointName"));

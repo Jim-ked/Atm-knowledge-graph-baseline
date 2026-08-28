@@ -11,6 +11,8 @@ import org.atmkg.core.model.GraphRelationship;
 import org.atmkg.core.model.MappingResult;
 import org.atmkg.core.model.SourceRecord;
 import org.atmkg.core.model.mapping.MappingCatalog;
+import org.atmkg.core.model.mapping.MappingScope;
+import org.atmkg.core.model.mapping.MappingScopeStatus;
 import org.atmkg.core.spi.SourceAdapter;
 import org.atmkg.infra.identity.DeterministicIdentityResolver;
 import org.atmkg.infra.mapping.DefaultMappingEngine;
@@ -42,9 +44,7 @@ public final class SourceMappingPreviewMain {
         int sampleLimit = targeted ? positiveInt(args[4]) : args.length > 2 ? positiveInt(args[2]) : 3;
 
         var schema = new JenaOntologyService().load(Path.of("ontology/atm_knowledge_graph.ttl"));
-        MappingCatalog catalog = new PoiMappingRegistry().load(mappingFile, schema);
-        DefaultMappingEngine engine = new DefaultMappingEngine(catalog,
-                new DeterministicIdentityResolver(ProjectConstants.IDENTITY_NAMESPACE));
+        var inspection = new PoiMappingRegistry().inspect(mappingFile, schema);
         SourceConfig sources = SourceConfig.load(sourcesFile);
         Path projectRoot = Path.of(".").toAbsolutePath().normalize();
 
@@ -53,6 +53,9 @@ public final class SourceMappingPreviewMain {
         System.out.println("mapping=" + mappingFile.toAbsolutePath().normalize());
         if (targeted) {
             ConfiguredSource source = sources.requireSource(args[2]);
+            MappingCatalog catalog = catalogForScope(inspection, args[2], args[3]);
+            DefaultMappingEngine engine = new DefaultMappingEngine(catalog,
+                    new DeterministicIdentityResolver(ProjectConstants.IDENTITY_NAMESPACE));
             preview(source, args[3], SOURCE_ADAPTERS.create(source, projectRoot), engine, sampleLimit);
             return;
         }
@@ -62,8 +65,31 @@ public final class SourceMappingPreviewMain {
             }
             SourceAdapter adapter = SOURCE_ADAPTERS.create(source, projectRoot);
             source.getConfig().path("objects").fieldNames().forEachRemaining(objectName ->
-                    preview(source, objectName, adapter, engine, sampleLimit));
+                    previewIfValid(source, objectName, adapter, inspection, sampleLimit));
         }
+    }
+
+    static MappingCatalog catalogForScope(org.atmkg.core.model.mapping.MappingInspection inspection,
+                                          String sourceId, String objectName) {
+        MappingScope scope = new MappingScope(sourceId, objectName);
+        MappingScopeStatus status = inspection.report().status(scope);
+        if (status != MappingScopeStatus.VALID) {
+            throw new IllegalArgumentException("Mapping scope " + sourceId + "/" + objectName + " 状态为 " + status);
+        }
+        return inspection.validCatalog();
+    }
+
+    private static void previewIfValid(ConfiguredSource source, String objectName, SourceAdapter adapter,
+                                       org.atmkg.core.model.mapping.MappingInspection inspection, int sampleLimit) {
+        MappingScope scope = new MappingScope(source.getSourceId(), objectName);
+        MappingScopeStatus status = inspection.report().status(scope);
+        if (status != MappingScopeStatus.VALID) {
+            System.out.println("[" + objectName + "] 跳过：Mapping scope 状态为 " + status);
+            return;
+        }
+        DefaultMappingEngine engine = new DefaultMappingEngine(inspection.validCatalog(),
+                new DeterministicIdentityResolver(ProjectConstants.IDENTITY_NAMESPACE));
+        preview(source, objectName, adapter, engine, sampleLimit);
     }
 
     static List<MappingResult> preview(ConfiguredSource source, String objectName, SourceAdapter adapter,

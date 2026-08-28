@@ -17,16 +17,16 @@ atmkg:AviationBaseObject a owl:Class ;
 
 atmkg:RouteSequence a owl:Class ;
     rdfs:label "有序路线结构"@zh-CN ;
-    rdfs:comment "表示由顺序节点和相邻航段组成的结构，作为普通航路与班机航线共享节点/航段关系的中性上位类。"@zh-CN .
+    rdfs:comment "表示由顺序节点和相邻航段组成的结构，适用于 Route、ScheduledFlightRoute 和 PlannedFlightRoute。"@zh-CN .
 
 atmkg:Airport a owl:Class ; rdfs:subClassOf atmkg:AviationBaseObject ;
-    rdfs:label "机场"@zh-CN ; rdfs:comment "四字码是当前主要稳定业务标识；airportCode 与 icaoCode 应一致，iataCode 可缺失。"@zh-CN .
+    rdfs:label "机场"@zh-CN ; rdfs:comment "机场实体；airportCode 是本项目可使用的机场业务代码，未来没有 ICAO 四字码的机场仍可使用 airportCode。"@zh-CN .
 
 atmkg:Runway a owl:Class ; rdfs:subClassOf atmkg:AviationBaseObject ;
     rdfs:label "跑道"@zh-CN ; rdfs:comment "表示物理跑道，长度和宽度属于物理跑道；CODE 包含机场四字码与双向跑道码。"@zh-CN .
 
 atmkg:RunwayDirection a owl:Class ;
-    rdfs:label "跑道方向"@zh-CN ; rdfs:comment "表示一个物理跑道的一个运行方向，当前只保存已核定的方向标识，不引入 RunwayEnd、Threshold 或 ReciprocalRunway。"@zh-CN .
+    rdfs:label "跑道方向"@zh-CN ; rdfs:comment "保存一个物理跑道具体方向的方向标识以及该方向的入口/出口位置、高程等方向属性。"@zh-CN .
 
 atmkg:NavigationAid a owl:Class ; rdfs:subClassOf atmkg:AviationBaseObject ;
     rdfs:label "导航台"@zh-CN ; rdfs:comment "表示 DME、NDB、VOR、TACAN、OTH、VOR/DME 或 VORTAC 类型的导航台，保存代码、名称、英文名、呼号、坐标和 kHz 频率。"@zh-CN .
@@ -78,10 +78,10 @@ atmkg:hasDirection a owl:ObjectProperty ; rdfs:domain atmkg:Runway ; rdfs:range 
     rdfs:label "具有跑道方向"@zh-CN ; rdfs:comment "连接物理跑道与其两个运行方向。"@zh-CN .
 
 atmkg:hasNode a owl:ObjectProperty ; rdfs:domain atmkg:RouteSequence ; rdfs:range atmkg:RouteNode ;
-    rdfs:label "具有节点"@zh-CN ; rdfs:comment "连接 Route 或 ScheduledFlightRoute 与其顺序节点。"@zh-CN .
+    rdfs:label "具有节点"@zh-CN ; rdfs:comment "连接 Route、ScheduledFlightRoute 或 PlannedFlightRoute 与其顺序节点。"@zh-CN .
 
 atmkg:hasSegment a owl:ObjectProperty ; rdfs:domain atmkg:RouteSequence ; rdfs:range atmkg:RouteSegment ;
-    rdfs:label "具有航段"@zh-CN ; rdfs:comment "连接 Route 或 ScheduledFlightRoute 与由相邻节点生成的航段。"@zh-CN .
+    rdfs:label "具有航段"@zh-CN ; rdfs:comment "连接 Route、ScheduledFlightRoute 或 PlannedFlightRoute 与其路线航段。"@zh-CN .
 
 atmkg:departsFrom a owl:ObjectProperty ; rdfs:domain atmkg:Flight ; rdfs:range atmkg:Airport ;
     rdfs:label "从机场起飞"@zh-CN ; rdfs:comment "连接具体航班与其出发机场。"@zh-CN .
@@ -115,7 +115,7 @@ atmkg:callSign a owl:DatatypeProperty ; rdfs:range xsd:string ; rdfs:label "呼�
 atmkg:countryRegion a owl:DatatypeProperty ; rdfs:range xsd:string ; rdfs:label "国家地区"@zh-CN ; rdfs:comment "保留源国家/地区代码或经显式 alias 归一的值。"@zh-CN .
 atmkg:latitude a owl:DatatypeProperty ; rdfs:range xsd:decimal ; rdfs:label "纬度"@zh-CN ; rdfs:comment "保存十进制度纬度，源字段可含 N/S 后缀。"@zh-CN .
 atmkg:longitude a owl:DatatypeProperty ; rdfs:range xsd:decimal ; rdfs:label "经度"@zh-CN ; rdfs:comment "保存十进制度经度，源字段可含 E/W 后缀。"@zh-CN .
-atmkg:sequenceNumber a owl:DatatypeProperty ; rdfs:range xsd:integer ; rdfs:label "序号"@zh-CN ; rdfs:comment "保存 RouteNode 或 BoundaryPoint 的离散顺序。"@zh-CN .
+atmkg:sequenceNumber a owl:DatatypeProperty ; rdfs:range xsd:integer ; rdfs:label "序号"@zh-CN ; rdfs:comment "保存有序结构中的离散顺序；当前主要用于 RouteSegment 的路线顺序和 BoundaryPoint 的几何绘制顺序。"@zh-CN .
 
 # Flight
 atmkg:flightId a owl:DatatypeProperty ; rdfs:domain atmkg:Flight ; rdfs:range xsd:string ; rdfs:label "航班唯一标识"@zh-CN ; rdfs:comment "保存源系统中用于稳定识别具体航班的唯一业务标识。"@zh-CN .
@@ -129,8 +129,8 @@ atmkg:actualDepartureTime a owl:DatatypeProperty ; rdfs:domain atmkg:Flight ; rd
 atmkg:actualArrivalTime a owl:DatatypeProperty ; rdfs:domain atmkg:Flight ; rdfs:range xsd:dateTime ; rdfs:label "实际到达时间"@zh-CN ; rdfs:comment "保存实际到达时间；未完成或尚未产生时允许缺失。"@zh-CN .
 
 # Airport
-atmkg:airportCode a owl:DatatypeProperty ; rdfs:domain atmkg:Airport ; rdfs:range xsd:string ; rdfs:label "机场代码"@zh-CN ; rdfs:comment "当前与 ICAO 四字码一致，是主要稳定业务标识。"@zh-CN .
-atmkg:icaoCode a owl:DatatypeProperty ; rdfs:domain atmkg:Airport ; rdfs:range xsd:string ; rdfs:label "ICAO 四字码"@zh-CN ; rdfs:comment "机场四字码，当前应与 airportCode 一致。"@zh-CN .
+atmkg:airportCode a owl:DatatypeProperty ; rdfs:domain atmkg:Airport ; rdfs:range xsd:string ; rdfs:label "机场代码"@zh-CN ; rdfs:comment "本项目可使用的机场业务代码；当前民航数据中可以与 ICAO 四字码相同，但不要求永久相同。"@zh-CN .
+atmkg:icaoCode a owl:DatatypeProperty ; rdfs:domain atmkg:Airport ; rdfs:range xsd:string ; rdfs:label "ICAO 四字码"@zh-CN ; rdfs:comment "ICAO 标准四字码，可缺失。"@zh-CN .
 atmkg:iataCode a owl:DatatypeProperty ; rdfs:domain atmkg:Airport ; rdfs:range xsd:string ; rdfs:label "IATA 三字码"@zh-CN ; rdfs:comment "机场三字码，当前允许缺失。"@zh-CN .
 atmkg:airportType a owl:DatatypeProperty ; rdfs:domain atmkg:Airport ; rdfs:range xsd:string ; rdfs:label "机场类型"@zh-CN ; rdfs:comment "当前实际值仅为民用和军民两用；新值留待人工 alias。"@zh-CN .
 atmkg:airportGrade a owl:DatatypeProperty ; rdfs:domain atmkg:Airport ; rdfs:range xsd:string ; rdfs:label "机场等级"@zh-CN ; rdfs:comment "保存实际民航标准机场等级。"@zh-CN .

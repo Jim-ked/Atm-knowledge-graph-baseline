@@ -3,5 +3,5 @@ EVT-001,fixture,AIRPORT,Z001,UPSERT,修改机场名称/标高
 EVT-002,fixture,RUNWAY,Z001-01/19,UPSERT,修改跑道属性并改变所属机场引用
 EVT-003,fixture,AIRPORT,Z999,UPSERT,新增机场
 EVT-004,fixture,RUNWAY,Z999-01/19,UPSERT,新增跑道及所属机场关系
-EVT-005,fixture,ROUTE_NODE,R003:N005,UPSERT,移除可选属性及下一节点关系
+EVT-005,fixture,ROUTE_NODE,R003:N005,UPSERT,移除可选属性
 EVT-006,fixture,CONTROL_AREA,CTA003,DELETE,删除无共享关系的管制区

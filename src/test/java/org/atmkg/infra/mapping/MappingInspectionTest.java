@@ -61,6 +61,62 @@ class MappingInspectionTest {
                 .noneMatch(item -> item.message().contains("UnmappedClass")));
     }
 
+    @Test
+    void incompleteEntityRowsNeverEnterValidCatalog() throws Exception {
+        Path path = emptyWorkbook("incomplete-entities.xlsx");
+        try (XSSFWorkbook book = new XSSFWorkbook(Files.newInputStream(path));
+             OutputStream output = Files.newOutputStream(path)) {
+            Sheet entities = book.getSheet(MappingWorkbookFormat.ENTITY_SHEET);
+            append(entities, "", "missing-source", "Airport", "code");
+            append(entities, "bad", "missing-key", "Airport", "");
+            append(entities, "good", "airports", "Airport", "code");
+            book.write(output);
+        }
+        var inspection = new PoiMappingRegistry().inspect(path, schema());
+        assertEquals(1, inspection.validCatalog().getEntities().size());
+        assertEquals("good", inspection.validCatalog().getEntities().get(0).getSourceId());
+        assertTrue(inspection.report().issues().stream().anyMatch(issue -> issue.sourceId().isBlank()));
+        assertTrue(inspection.report().issues().stream().anyMatch(issue -> issue.message().contains("businessKey")));
+    }
+
+    @Test
+    void halfFilledPropertyAndRelationshipRowsProduceIssuesAndNoSpecs() throws Exception {
+        Path path = emptyWorkbook("half-filled.xlsx");
+        try (XSSFWorkbook book = new XSSFWorkbook(Files.newInputStream(path));
+             OutputStream output = Files.newOutputStream(path)) {
+            append(book.getSheet(MappingWorkbookFormat.PROPERTY_SHEET),
+                    "bad", "half", "Airport", "code", "", "", "");
+            append(book.getSheet(MappingWorkbookFormat.RELATIONSHIP_SHEET),
+                    "bad", "half", "linkedTo", "Airport", "code", "Airport", "", "");
+            book.write(output);
+        }
+        var inspection = new PoiMappingRegistry().inspect(path, schema());
+        assertTrue(inspection.validCatalog().getProperties().isEmpty());
+        assertTrue(inspection.validCatalog().getRelationships().isEmpty());
+        assertTrue(inspection.report().issues().stream().anyMatch(issue -> issue.mappingKind().equals("属性映射")));
+        assertTrue(inspection.report().issues().stream().anyMatch(issue -> issue.mappingKind().equals("关系映射")));
+    }
+
+    @Test
+    void propertyWithoutEntityMappingInvalidatesOnlyItsScope() throws Exception {
+        Path path = emptyWorkbook("property-without-entity.xlsx");
+        try (XSSFWorkbook book = new XSSFWorkbook(Files.newInputStream(path));
+             OutputStream output = Files.newOutputStream(path)) {
+            append(book.getSheet(MappingWorkbookFormat.PROPERTY_SHEET),
+                    "property-only", "airports", "Airport", "code", "airportCode", "", "");
+            append(book.getSheet(MappingWorkbookFormat.ENTITY_SHEET),
+                    "good", "airports", "Airport", "code");
+            book.write(output);
+        }
+        var inspection = new PoiMappingRegistry().inspect(path, schema());
+        assertEquals(MappingScopeStatus.INVALID,
+                inspection.report().status(new MappingScope("property-only", "airports")));
+        assertEquals(MappingScopeStatus.VALID,
+                inspection.report().status(new MappingScope("good", "airports")));
+        assertTrue(inspection.report().issues().stream()
+                .anyMatch(issue -> issue.message().contains("缺少实体映射")));
+    }
+
     private Path workbook() throws Exception {
         Path path = temp.resolve("inspection.xlsx");
         try (XSSFWorkbook workbook = new XSSFWorkbook(); OutputStream output = Files.newOutputStream(path)) {
@@ -78,6 +134,15 @@ class MappingInspectionTest {
         return path;
     }
 
+    private Path emptyWorkbook(String name) throws Exception {
+        Path path = temp.resolve(name);
+        try (XSSFWorkbook workbook = new XSSFWorkbook(); OutputStream output = Files.newOutputStream(path)) {
+            MappingWorkbookFormat.createFormalSheets(workbook);
+            workbook.write(output);
+        }
+        return path;
+    }
+
     private static void append(Sheet sheet, String... values) {
         Row row = sheet.createRow(sheet.getLastRowNum() + 1);
         for (int index = 0; index < values.length; index++) row.createCell(index).setCellValue(values[index]);
@@ -89,7 +154,10 @@ class MappingInspectionTest {
         classes.put(NS + "UnmappedClass", term("UnmappedClass", Set.of()));
         OntologyTerm airportCode = new OntologyTerm(
                 NS + "airportCode", "机场代码", Set.of(NS + "Airport"), Set.of(), Set.of());
-        return new OntologySchema(classes, Map.of(airportCode.getIri(), airportCode), Map.of());
+        OntologyTerm linkedTo = new OntologyTerm(
+                NS + "linkedTo", "关联", Set.of(NS + "Airport"), Set.of(NS + "Airport"), Set.of());
+        return new OntologySchema(classes, Map.of(airportCode.getIri(), airportCode),
+                Map.of(linkedTo.getIri(), linkedTo));
     }
 
     private static OntologyTerm term(String localName, Set<String> superClasses) {

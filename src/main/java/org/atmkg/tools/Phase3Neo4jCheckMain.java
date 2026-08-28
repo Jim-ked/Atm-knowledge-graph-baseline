@@ -72,7 +72,7 @@ public final class Phase3Neo4jCheckMain {
             baseSync.fullRebuild(OBJECTS.stream().map(name -> new SourceScope("fixture", name)).toList());
             GraphStoreStats initial = store.stats();
             require(initial.getEntityCount() == 122, "base fixture 实体数应为 122");
-            require(initial.getRelationshipCount() == 186, "base fixture 关系数应为 186");
+            require(initial.getRelationshipCount() == 162, "base fixture 关系数应为 162");
 
             EntityMappingSpec airport = entityMapping(catalog, "Airport");
             EntityMappingSpec runway = entityMapping(catalog, "Runway");
@@ -87,7 +87,6 @@ public final class Phase3Neo4jCheckMain {
             String changedRunway = ids.entityUid(runway.getClassIri(), "Z001-01/19");
             String insertedRunway = ids.entityUid(runway.getClassIri(), "Z999-01/19");
             String changedNode = ids.entityUid(routeNode.getClassIri(), "R003:N005");
-            String oldNextNode = ids.entityUid(routeNode.getClassIri(), "R003:N006");
             String missedReportingPoint = ids.entityUid(reportingPoint.getClassIri(), "RPT002");
             String deletedControlArea = ids.entityUid(controlArea.getClassIri(), "CTA003");
             String protectedAirspace = ids.entityUid(airspace.getClassIri(), "AS0003");
@@ -100,8 +99,6 @@ public final class Phase3Neo4jCheckMain {
                         "R003:N005 初始可选属性不存在");
                 require(relationshipExists(session, settings.getProjectId(), NS + "hasRunway", "HAS_RUNWAY",
                         z001, changedRunway), "变化前 Z001 HAS_RUNWAY 关系不存在");
-                require(relationshipExists(session, settings.getProjectId(), NS + "nextNode", "NEXT_NODE",
-                        changedNode, oldNextNode), "变化前 R003:N005 NEXT_NODE 关系不存在");
             }
 
             // AS0003 is still referenced by a relationship owned by its geometry record.
@@ -146,8 +143,6 @@ public final class Phase3Neo4jCheckMain {
                         z001, changedRunway), "引用更新前的 Z001 HAS_RUNWAY 关系仍存在");
                 require(!propertyExists(session, settings.getProjectId(), changedNode, NS + "nodeName"),
                         "已清空的 nodeName 属性仍存在");
-                require(!relationshipExists(session, settings.getProjectId(), NS + "nextNode", "NEXT_NODE",
-                        changedNode, oldNextNode), "已清空的 NEXT_NODE 关系仍存在");
                 require(!entityExists(session, settings.getProjectId(), deletedControlArea), "CTA003 删除失败");
                 require(propertyEquals(session, settings.getProjectId(), missedReportingPoint,
                         NS + "reportingPointName", "模拟报告点2"), "漏事件记录不应提前变化");

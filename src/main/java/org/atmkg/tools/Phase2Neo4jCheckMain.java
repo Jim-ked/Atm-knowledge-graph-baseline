@@ -41,7 +41,7 @@ public final class Phase2Neo4jCheckMain {
     private static final Map<String, String> KEYS = Map.ofEntries(
             Map.entry("AIRPORT", "airportCode"), Map.entry("RUNWAY", "runwayCode"), Map.entry("RUNWAY_DIRECTION", "directionKey"), Map.entry("NAVIGATION_AID", "navigationAidCode"), Map.entry("REPORTING_POINT", "reportingPointCode"), Map.entry("ROUTE", "routeCode"), Map.entry("SCHEDULED_FLIGHT_ROUTE", "scheduledRouteCode"), Map.entry("ROUTE_NODE", "nodeKey"), Map.entry("ROUTE_SEGMENT", "segmentKey"), Map.entry("AIRSPACE", "airspaceCode"), Map.entry("AIRSPACE_GEOMETRY", "geometryKey"), Map.entry("BOUNDARY_POINT", "boundaryPointKey"), Map.entry("CONTROL_AREA", "controlAreaCode"), Map.entry("FLIGHT_INFORMATION_REGION", "flightInformationRegionCode"));
     private static final List<String> COVERED_CLASSES = List.of("Airport", "Runway", "RunwayDirection", "NavigationAid", "ReportingPoint", "Route", "ScheduledFlightRoute", "RouteNode", "RouteSegment", "Airspace", "AirspaceGeometry", "BoundaryPoint", "ControlArea", "FlightInformationRegion");
-    private static final List<String> COVERED_RELATIONSHIPS = List.of("HAS_RUNWAY", "HAS_DIRECTION", "HAS_NODE", "HAS_SEGMENT", "NEXT_NODE", "FROM_NODE", "TO_NODE", "REFERS_TO", "HAS_GEOMETRY", "HAS_BOUNDARY_POINT");
+    private static final List<String> COVERED_RELATIONSHIPS = List.of("HAS_RUNWAY", "HAS_DIRECTION", "HAS_NODE", "HAS_SEGMENT", "FROM_NODE", "TO_NODE", "REFERS_TO", "HAS_GEOMETRY", "HAS_BOUNDARY_POINT");
 
     private Phase2Neo4jCheckMain() {}
 
@@ -105,7 +105,7 @@ public final class Phase2Neo4jCheckMain {
             System.out.println("r001_two_hop_relationships=" + r001TwoHop.getRelationships().size());
             System.out.println("r001_path_nodes=" + r001Path.getNodes().size());
             System.out.println("r001_path_relationships=" + r001Path.getRelationships().size());
-            System.out.println("locatedIn/crosses=SKIPPED_BY_ONTOLOGY_STATUS");
+            System.out.println("crosses=SKIPPED_BY_ONTOLOGY_STATUS");
         }
     }
 

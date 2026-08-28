@@ -46,6 +46,8 @@ class PoiMappingRegistryIntegrationTest {
         MappingCatalog catalog = new PoiMappingRegistry().load(Path.of("fixtures/mapping/fixture_mapping.xlsx"), schema);
         assertEquals(14, catalog.getEntities().size());
         assertEquals(13, catalog.getRelationships().size());
+        assertTrue(catalog.propertyMappingsFor("fixture", "ROUTE_NODE", NS + "RouteNode").stream()
+                .noneMatch(property -> property.getPropertyIri().equals(NS + "sequenceNumber")));
 
         Path data = temp.resolve("data");
         new FixtureDataGenerator().generate(data, FixtureScale.SMALL, 20260821L);

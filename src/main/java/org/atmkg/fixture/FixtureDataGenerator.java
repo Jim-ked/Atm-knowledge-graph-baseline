@@ -85,7 +85,7 @@ public final class FixtureDataGenerator {
         writeCsv(dir.resolve("SCHEDULED_FLIGHT_ROUTE.csv"),
                 new String[]{"scheduledRouteCode","routeName","routeType"}, scheduledRoutes);
         writeCsv(dir.resolve("ROUTE_NODE.csv"),
-                new String[]{"nodeKey","routeCode","scheduledRouteCode","sequenceNumber","nodeCode","nodeName","nodeTypeCode","latitude","longitude","nextNodeKey","navigationAidCode","reportingPointCode"}, nodes);
+                new String[]{"nodeKey","routeCode","scheduledRouteCode","sequenceNumber","nodeCode","nodeName","nodeTypeCode","latitude","longitude","navigationAidCode","reportingPointCode"}, nodes);
         writeCsv(dir.resolve("ROUTE_SEGMENT.csv"),
                 new String[]{"segmentKey","routeCode","scheduledRouteCode","fromNodeKey","toNodeKey","segmentDistance","magneticCourse","reverseMagneticCourse"}, segments);
         writeCsv(dir.resolve("AIRSPACE.csv"),
@@ -116,7 +116,6 @@ public final class FixtureDataGenerator {
         for (String[] node : nodes) {
             if ("R003:N005".equals(node[0])) {
                 node[5] = ""; // optional property removal
-                node[9] = ""; // optional NEXT_NODE relationship removal
             }
         }
         for (String[] reportingPoint : reportingPoints) {
@@ -211,20 +210,18 @@ public final class FixtureDataGenerator {
         for (String[] route : routes) {
             for (int n = 1; n <= scale.nodesPerRoute; n++) {
                 String nodeKey = route[0] + ":N" + String.format("%03d", n);
-                String next = n < scale.nodesPerRoute ? route[0] + ":N" + String.format("%03d", n + 1) : "";
                 String navigation = n == 1 ? "NAV001" : "";
                 String reporting = n == 2 ? "RPT001" : "";
                 rows.add(new String[]{nodeKey, route[0], "", String.valueOf(n), "P" + route[0].substring(1) + String.format("%02d", n),
-                        "模拟节点" + n, "RPT", f(20 + random.nextDouble() * 25), f(80 + random.nextDouble() * 45), next, navigation, reporting});
+                        "模拟节点" + n, "RPT", f(20 + random.nextDouble() * 25), f(80 + random.nextDouble() * 45), navigation, reporting});
             }
         }
         for (String[] route : scheduledRoutes) {
             int count = Math.max(3, Math.min(scale.nodesPerRoute, 4));
             for (int n = 1; n <= count; n++) {
                 String nodeKey = route[0] + ":N" + String.format("%03d", n);
-                String next = n < count ? route[0] + ":N" + String.format("%03d", n + 1) : "";
                 rows.add(new String[]{nodeKey, "", route[0], String.valueOf(n), "S" + route[0].substring(3) + String.format("%02d", n),
-                        "模拟班机节点" + n, "NAV", f(25 + random.nextDouble() * 20), f(85 + random.nextDouble() * 35), next, "NAV002", ""});
+                        "模拟班机节点" + n, "NAV", f(25 + random.nextDouble() * 20), f(85 + random.nextDouble() * 35), "NAV002", ""});
             }
         }
         return rows;
@@ -303,7 +300,7 @@ public final class FixtureDataGenerator {
         if (!runways.isEmpty()) rows.add(new String[]{"EVT-002","fixture","RUNWAY",runways.get(0)[0],"UPSERT","修改跑道属性并改变所属机场引用"});
         rows.add(new String[]{"EVT-003","fixture","AIRPORT","Z999","UPSERT","新增机场"});
         rows.add(new String[]{"EVT-004","fixture","RUNWAY","Z999-01/19","UPSERT","新增跑道及所属机场关系"});
-        rows.add(new String[]{"EVT-005","fixture","ROUTE_NODE","R003:N005","UPSERT","移除可选属性及下一节点关系"});
+        rows.add(new String[]{"EVT-005","fixture","ROUTE_NODE","R003:N005","UPSERT","移除可选属性"});
         if (!controlAreas.isEmpty()) rows.add(new String[]{"EVT-006","fixture","CONTROL_AREA",controlAreas.get(controlAreas.size()-1)[0],"DELETE","删除无共享关系的管制区"});
         writeCsv(file, new String[]{"eventId","sourceId","objectName","sourceKey","operation","scenario"}, rows);
     }

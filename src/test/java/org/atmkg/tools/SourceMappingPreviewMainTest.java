@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.io.OutputStream;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -14,6 +15,9 @@ import org.atmkg.core.model.mapping.EntityMappingSpec;
 import org.atmkg.core.model.mapping.MappingCatalog;
 import org.atmkg.core.spi.SourceAdapter;
 import org.atmkg.fixture.SourcePreviewMappingWorkbookGenerator;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.atmkg.infra.identity.DeterministicIdentityResolver;
 import org.atmkg.infra.mapping.DefaultMappingEngine;
 import org.atmkg.infra.mapping.PoiMappingRegistry;
@@ -59,6 +63,25 @@ class SourceMappingPreviewMainTest {
         assertEquals(10, catalog.getRelationships().size());
         assertEquals(1, catalog.relationshipMappingsFor(
                 "preview-route-node", "route-node").size());
+    }
+
+    @Test
+    void targetedCatalogIgnoresUnrelatedInvalidScope() throws Exception {
+        Path workbook = temp.resolve("scoped.xlsx");
+        SourcePreviewMappingWorkbookGenerator.generate(workbook);
+        try (XSSFWorkbook book = new XSSFWorkbook(Files.newInputStream(workbook));
+             OutputStream output = Files.newOutputStream(workbook)) {
+            Sheet properties = book.getSheet("属性映射");
+            Row row = properties.createRow(properties.getLastRowNum() + 1);
+            String[] values = {"bad-source", "bad-object", "Route", "routeCode", "missingProperty", "", ""};
+            for (int i = 0; i < values.length; i++) row.createCell(i).setCellValue(values[i]);
+            book.write(output);
+        }
+        var schema = new JenaOntologyService().load(Path.of("ontology/atm_knowledge_graph.ttl"));
+        var inspection = new PoiMappingRegistry().inspect(workbook, schema);
+        MappingCatalog catalog = SourceMappingPreviewMain.catalogForScope(
+                inspection, "preview-route-parent", "route-parent");
+        assertEquals(1, catalog.entityMappingsFor("preview-route-parent", "route-parent").size());
     }
 
     private ConfiguredSource jdbcSource() throws Exception {

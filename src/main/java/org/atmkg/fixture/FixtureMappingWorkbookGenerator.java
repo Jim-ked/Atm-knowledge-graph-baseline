@@ -116,7 +116,6 @@ public final class FixtureMappingWorkbookGenerator {
         add(rows, "RouteNode", "nodeCode", "节点代码", "ROUTE_NODE", "nodeCode", "nodeCode", "", "false");
         add(rows, "RouteNode", "nodeName", "节点名称", "ROUTE_NODE", "nodeName", "nodeName", "", "false");
         add(rows, "RouteNode", "nodeTypeCode", "节点类型", "ROUTE_NODE", "nodeTypeCode", "nodeTypeCode", "", "false");
-        add(rows, "RouteNode", "sequenceNumber", "序号", "ROUTE_NODE", "sequenceNumber", "sequenceNumber", "integer", "true");
         add(rows, "RouteNode", "latitude", "纬度", "ROUTE_NODE", "latitude", "latitude", "decimal", "false");
         add(rows, "RouteNode", "longitude", "经度", "ROUTE_NODE", "longitude", "longitude", "decimal", "false");
         add(rows, "RouteSegment", "segmentDistance", "航段距离", "ROUTE_SEGMENT", "segmentDistance", "segmentDistance", "decimal", "false");
