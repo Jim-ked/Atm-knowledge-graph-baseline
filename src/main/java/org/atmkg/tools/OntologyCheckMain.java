@@ -34,7 +34,7 @@ public final class OntologyCheckMain {
             System.out.println("datatypeProperties=" + schema.getDatatypeProperties().size());
             System.out.println("objectProperties=" + schema.getObjectProperties().size());
             int issues = 0;
-            issues += checkReferences(model, schema, RDFS.subClassOf, "subClassOf", null);
+            issues += checkReferences(model, schema, RDFS.subClassOf, "subClassOf", new Resource[0]);
             issues += checkReferences(model, schema, RDFS.domain, "domain", OWL.DatatypeProperty, OWL.ObjectProperty);
             issues += checkReferences(model, schema, RDFS.range, "range", OWL.ObjectProperty);
             return issues == 0 ? 0 : 1;

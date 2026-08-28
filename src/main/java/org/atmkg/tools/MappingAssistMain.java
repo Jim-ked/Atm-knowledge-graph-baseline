@@ -117,7 +117,7 @@ public final class MappingAssistMain {
             System.out.println("业务主键冲突：同一 sourceId/sourceObject/Class 已有不同业务主键的人工实体行，"
                     + "已保留且未写入任何候选，请人工处理。");
         }
-        System.out.println("PoiMappingRegistry 已重新加载并验证完整工作簿。");
+        System.out.println("Mapping 工作簿结构已重新检查，当前目标 scope 校验通过。");
     }
 
     private static void printAnalysis(SourceEntry entry, OntologyTerm selectedClass, String businessKey,
