@@ -68,7 +68,7 @@ public final class MappingAssist {
 
         Path target = mappingFile.toAbsolutePath().normalize();
         PoiMappingRegistry registry = new PoiMappingRegistry();
-        MappingCatalog existing = registry.load(target, schema);
+        MappingCatalog existing = registry.inspect(target, schema).validCatalog();
         boolean identicalEntity = existing.getEntities().stream().anyMatch(entity ->
                 sameEntityScope(entity, normalizedSourceId, normalizedObject, classIri)
                         && normalizedBusinessKey.equals(entity.getBusinessKey()));
@@ -110,10 +110,14 @@ public final class MappingAssist {
                 MappingWorkbookFormat.applyEditingFeatures(workbook);
                 workbook.write(output);
             }
-            registry.load(temporary, schema);
+            var inspection = registry.inspect(temporary, schema);
+            if (!inspection.report().issuesFor(new org.atmkg.core.model.mapping.MappingScope(
+                    normalizedSourceId, normalizedObject)).isEmpty()) {
+                throw new IllegalStateException("生成的 Mapping scope 校验失败");
+            }
             replace(temporary, target);
             temporary = null;
-            registry.load(target, schema);
+            registry.inspect(target, schema);
             return new WriteResult(entityAdded, additions.size(), skipped,
                     entityScopeExists && !identicalEntity);
         } catch (IOException ex) {

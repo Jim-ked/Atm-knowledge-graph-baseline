@@ -81,4 +81,42 @@ class DefaultMappingEngineTest {
 
         assertTrue(unrelated.getRelationships().isEmpty());
     }
+
+    @Test
+    void entityAndRelationshipLocatorsUseTheSameCompositeKeyResolver() {
+        EntityMappingSpec node = new EntityMappingSpec(
+                NS + "RouteNode", "source-A", "nodes", "nodeType;nodeCode");
+        RelationshipMappingSpec link = new RelationshipMappingSpec(
+                NS + "fromNode", NS + "RouteNode", NS + "RouteNode", "source-A", "links",
+                "from.type;from.code", "to.type;to.code", "");
+        MappingCatalog catalog = new MappingCatalog(List.of(node), List.of(), List.of(link));
+        DefaultMappingEngine engine = new DefaultMappingEngine(
+                catalog, new DeterministicIdentityResolver("urn:test:kg:"));
+
+        MappingResult entity = engine.map(new SourceRecord("source-A", "nodes", "1",
+                Map.of("nodeType", "FIX", "nodeCode", "DOGAR"), null));
+        MappingResult relation = engine.map(new SourceRecord("source-A", "links", "1",
+                Map.of("from", Map.of("type", "FIX", "code", "DOGAR"),
+                        "to", Map.of("type", "FIX", "code", "OTHER")), null));
+
+        assertEquals(entity.getEntities().get(0).getUid(), relation.getRelationships().get(0).getSourceUid());
+    }
+
+    @Test
+    void multiSourceRouteNodesWithDifferentBusinessFieldNamesShareUid() {
+        EntityMappingSpec sourceA = new EntityMappingSpec(
+                NS + "RouteNode", "source-A", "nodes", "NODE_CODE");
+        EntityMappingSpec sourceB = new EntityMappingSpec(
+                NS + "RouteNode", "source-B", "nodes", "POINT_CODE");
+        DefaultMappingEngine engine = new DefaultMappingEngine(
+                new MappingCatalog(List.of(sourceA, sourceB), List.of(), List.of()),
+                new DeterministicIdentityResolver("urn:test:kg:"));
+
+        MappingResult left = engine.map(new SourceRecord("source-A", "nodes", "1",
+                Map.of("NODE_CODE", " DOGAR "), null));
+        MappingResult right = engine.map(new SourceRecord("source-B", "nodes", "1",
+                Map.of("POINT_CODE", "DOGAR"), null));
+
+        assertEquals(left.getEntities().get(0).getUid(), right.getEntities().get(0).getUid());
+    }
 }

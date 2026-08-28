@@ -17,6 +17,7 @@ import org.atmkg.core.model.SourceRef;
 import org.atmkg.core.model.SourceScope;
 import org.atmkg.core.spi.GraphStore;
 import org.atmkg.core.spi.MappingEngine;
+import org.atmkg.core.spi.MappingScopeValidator;
 import org.atmkg.core.spi.SourceAdapter;
 import org.atmkg.core.spi.SyncService;
 
@@ -38,6 +39,7 @@ public final class DefaultSyncService implements SyncService {
     private final MappingEngine mappingEngine;
     private final GraphStore graphStore;
     private final Consumer<GraphChangeNotice> noticeListener;
+    private final MappingScopeValidator scopeValidator;
     /** 仅用于本进程近期重复抑制；有界、非持久化，不提供 exactly-once 保证。 */
     private final Map<String, Boolean> recentEventIds = new LinkedHashMap<>(16, 0.75f, true);
 
@@ -47,11 +49,17 @@ public final class DefaultSyncService implements SyncService {
 
     public DefaultSyncService(Map<String, SourceAdapter> adapters, MappingEngine mappingEngine, GraphStore graphStore,
                               Consumer<GraphChangeNotice> noticeListener) {
+        this(adapters, mappingEngine, graphStore, noticeListener, MappingScopeValidator.allowAll());
+    }
+
+    public DefaultSyncService(Map<String, SourceAdapter> adapters, MappingEngine mappingEngine, GraphStore graphStore,
+                              Consumer<GraphChangeNotice> noticeListener, MappingScopeValidator scopeValidator) {
         Objects.requireNonNull(adapters, "adapters");
         this.adapters = Map.copyOf(new LinkedHashMap<>(adapters));
         this.mappingEngine = Objects.requireNonNull(mappingEngine, "mappingEngine");
         this.graphStore = Objects.requireNonNull(graphStore, "graphStore");
         this.noticeListener = Objects.requireNonNull(noticeListener, "noticeListener");
+        this.scopeValidator = Objects.requireNonNull(scopeValidator, "scopeValidator");
     }
 
     @Override
@@ -59,6 +67,7 @@ public final class DefaultSyncService implements SyncService {
         Objects.requireNonNull(event, "event");
         if (recentEventIds.get(event.getEventId()) != null) return;
         SourceRef ref = new SourceRef(event.getSourceId(), event.getObjectName(), event.getSourceKey());
+        scopeValidator.requireValid(event.getSourceId(), event.getObjectName());
         if (event.getOperation() == ChangeEvent.Operation.DELETE) {
             GraphProjectionSnapshot deleted = graphStore.deleteProjection(ref);
             noticeListener.accept(GraphChangeNotice.forDelete(ref, deleted, Instant.now()));
@@ -73,6 +82,7 @@ public final class DefaultSyncService implements SyncService {
 
     @Override
     public void fullSync(String sourceId, String objectName) {
+        scopeValidator.requireValid(sourceId, objectName);
         SourceAdapter adapter = adapter(sourceId);
         writeEntityEndpoints(adapter, sourceId, objectName);
         replaceCurrentRecords(adapter, sourceId, objectName);
@@ -82,6 +92,7 @@ public final class DefaultSyncService implements SyncService {
     public void fullRebuild(Collection<SourceScope> scopes) {
         Objects.requireNonNull(scopes, "scopes");
         if (scopes.isEmpty()) throw new IllegalArgumentException("fullRebuild scopes 不能为空");
+        for (SourceScope scope : scopes) scopeValidator.requireValid(scope.getSourceId(), scope.getObjectName());
         graphStore.clearProject();
 
         // Pass 1 across every source object: create all entity endpoints first.
@@ -114,6 +125,7 @@ public final class DefaultSyncService implements SyncService {
     @Override
     public void compensateSince(String sourceId, String objectName, Instant since) {
         Objects.requireNonNull(since, "since");
+        scopeValidator.requireValid(sourceId, objectName);
         SourceAdapter adapter = adapter(sourceId);
         consumeRecords(adapter.scanChangedSince(objectName, since), record -> {
             validateRecordScope(record, sourceId, objectName);
@@ -123,10 +135,12 @@ public final class DefaultSyncService implements SyncService {
 
     @Override
     public void resync(String sourceId, String objectName, String sourceKey) {
+        scopeValidator.requireValid(sourceId, objectName);
         resyncProjection(sourceId, objectName, sourceKey);
     }
 
     private Optional<MappingResult> resyncProjection(String sourceId, String objectName, String sourceKey) {
+        scopeValidator.requireValid(sourceId, objectName);
         SourceAdapter adapter = adapter(sourceId);
         SourceRef ref = new SourceRef(sourceId, objectName, sourceKey);
         Optional<SourceRecord> current = adapter.readByKey(objectName, sourceKey);

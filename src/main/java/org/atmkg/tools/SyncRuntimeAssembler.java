@@ -12,6 +12,7 @@ import org.atmkg.core.model.OntologySchema;
 import org.atmkg.core.model.mapping.MappingCatalog;
 import org.atmkg.core.spi.GraphStore;
 import org.atmkg.core.spi.MappingEngine;
+import org.atmkg.core.spi.MappingScopeValidator;
 import org.atmkg.core.spi.SourceAdapter;
 import org.atmkg.core.spi.SyncService;
 import org.atmkg.infra.identity.DeterministicIdentityResolver;
@@ -133,13 +134,16 @@ final class SyncRuntimeAssembler {
         }
 
         // 2. 加载人工 mapping，并初始化 Neo4j 图存储和同步服务。
-        MappingCatalog catalog = new PoiMappingRegistry().load(
+        var inspection = new PoiMappingRegistry().inspect(
                 plan.root().resolve("mapping/字段映射.xlsx"), schema);
+        MappingCatalog catalog = inspection.validCatalog();
+        MappingScopeValidator scopeValidator = (sourceId, sourceObject) -> inspection.report()
+                .status(new org.atmkg.core.model.mapping.MappingScope(sourceId, sourceObject));
         DefaultMappingEngine mapping = new DefaultMappingEngine(catalog,
                 new DeterministicIdentityResolver(ProjectConstants.IDENTITY_NAMESPACE));
         Neo4jGraphStore store = new Neo4jGraphStore(driver, neo4j, schema);
         store.initializeSchema();
-        DefaultSyncService syncService = syncService(adapters, mapping, store, noticeListener);
+        DefaultSyncService syncService = syncService(adapters, mapping, store, noticeListener, scopeValidator);
         if (!plan.sync().isPollingEnabled()) {
             return new SyncAssembly(syncService, SyncRuntime.enabled(syncService));
         }
@@ -158,6 +162,12 @@ final class SyncRuntimeAssembler {
     static DefaultSyncService syncService(Map<String, SourceAdapter> adapters, MappingEngine mapping,
                                           GraphStore store, Consumer<GraphChangeNotice> noticeListener) {
         return new DefaultSyncService(adapters, mapping, store, noticeListener);
+    }
+
+    static DefaultSyncService syncService(Map<String, SourceAdapter> adapters, MappingEngine mapping,
+                                          GraphStore store, Consumer<GraphChangeNotice> noticeListener,
+                                          MappingScopeValidator scopeValidator) {
+        return new DefaultSyncService(adapters, mapping, store, noticeListener, scopeValidator);
     }
 
     record AssemblyPlan(Path root, SourceConfig sources, SyncRuntimeConfig sync) {}

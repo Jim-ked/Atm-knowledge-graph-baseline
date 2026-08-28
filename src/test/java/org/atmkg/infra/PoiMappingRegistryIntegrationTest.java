@@ -82,6 +82,7 @@ class PoiMappingRegistryIntegrationTest {
 
         Map<String, List<List<String>>> refreshedRows = workbookRows(copy);
         for (Map.Entry<String, List<List<String>>> entry : originalRows.entrySet()) {
+            if ("本体参考".equals(entry.getKey())) continue;
             List<List<String>> rows = refreshedRows.get(entry.getKey());
             assertEquals(entry.getValue(), rows, () -> entry.getKey() + " 的人工行被删除、改名、覆盖或追加");
         }

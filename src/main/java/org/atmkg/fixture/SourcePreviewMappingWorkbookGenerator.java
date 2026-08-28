@@ -126,8 +126,6 @@ public final class SourcePreviewMappingWorkbookGenerator {
                                          String sourceObject, String routeLocator) {
         relation(r, "hasSegment", routeClass, "RouteSegment", sourceId, sourceObject,
                 routeLocator, "current.__sourceKey");
-        relation(r, "nextNode", "RouteNode", "RouteNode", sourceId, sourceObject,
-                "current.__sourceKey", "next.__sourceKey");
         relation(r, "fromNode", "RouteSegment", "RouteNode", sourceId, sourceObject,
                 "current.__sourceKey", "current.__sourceKey");
         relation(r, "toNode", "RouteSegment", "RouteNode", sourceId, sourceObject,

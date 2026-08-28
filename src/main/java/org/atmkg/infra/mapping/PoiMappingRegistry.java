@@ -23,6 +23,10 @@ import org.atmkg.core.model.OntologySchema;
 import org.atmkg.core.model.OntologyTerm;
 import org.atmkg.core.model.mapping.EntityMappingSpec;
 import org.atmkg.core.model.mapping.MappingCatalog;
+import org.atmkg.core.model.mapping.MappingInspection;
+import org.atmkg.core.model.mapping.MappingIssue;
+import org.atmkg.core.model.mapping.MappingScope;
+import org.atmkg.core.model.mapping.MappingValidationReport;
 import org.atmkg.core.model.mapping.PropertyMappingSpec;
 import org.atmkg.core.model.mapping.RelationshipMappingSpec;
 import org.atmkg.core.spi.MappingRegistry;
@@ -47,6 +51,140 @@ public final class PoiMappingRegistry implements MappingRegistry {
         } catch (IOException ex) {
             throw new MappingExecutionException("字段映射文件读取失败：" + mappingFile, ex);
         }
+    }
+
+    /** Parse the workbook while isolating semantic errors to their source scope. */
+    public MappingInspection inspect(Path mappingFile, OntologySchema schema) {
+        requireFile(mappingFile);
+        try (InputStream input = Files.newInputStream(mappingFile); Workbook workbook = new XSSFWorkbook(input)) {
+            Sheet entitiesSheet = requireSheet(workbook, MappingWorkbookFormat.ENTITY_SHEET);
+            Sheet propertiesSheet = requireSheet(workbook, MappingWorkbookFormat.PROPERTY_SHEET);
+            Sheet relationshipsSheet = requireSheet(workbook, MappingWorkbookFormat.RELATIONSHIP_SHEET);
+            requireHeaders(entitiesSheet, MappingWorkbookFormat.ENTITY_HEADERS);
+            requireHeaders(propertiesSheet, MappingWorkbookFormat.PROPERTY_HEADERS);
+            requireHeaders(relationshipsSheet, MappingWorkbookFormat.RELATIONSHIP_HEADERS);
+            List<MappingIssue> issues = new ArrayList<>();
+            Set<MappingScope> scopes = new java.util.LinkedHashSet<>();
+            List<EntityMappingSpec> entities = inspectEntities(entitiesSheet, schema, issues, scopes);
+            List<PropertyMappingSpec> properties = inspectProperties(propertiesSheet, schema, issues, scopes);
+            List<RelationshipMappingSpec> relationships = inspectRelationships(relationshipsSheet, schema, issues, scopes);
+            MappingCatalog parsed = new MappingCatalog(entities, properties, relationships);
+            addSemanticIssues(parsed, schema, issues, entitiesSheet, propertiesSheet, relationshipsSheet);
+            MappingValidationReport report = new MappingValidationReport(issues, scopes);
+            Set<MappingScope> invalid = scopes.stream()
+                    .filter(scope -> report.status(scope) == org.atmkg.core.model.mapping.MappingScopeStatus.INVALID)
+                    .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+            MappingCatalog valid = new MappingCatalog(
+                    entities.stream().filter(e -> !invalid.contains(new MappingScope(e.getSourceId(), e.getSourceObject()))).toList(),
+                    properties.stream().filter(p -> !invalid.contains(new MappingScope(p.getSourceId(), p.getSourceObject()))).toList(),
+                    relationships.stream().filter(r -> !invalid.contains(new MappingScope(r.getSourceId(), r.getSourceObject()))).toList());
+            return new MappingInspection(valid, report);
+        } catch (IOException ex) {
+            throw new MappingExecutionException("字段映射文件读取失败：" + mappingFile, ex);
+        }
+    }
+
+    private List<EntityMappingSpec> inspectEntities(Sheet sheet, OntologySchema schema,
+                                                    List<MappingIssue> issues, Set<MappingScope> scopes) {
+        List<EntityMappingSpec> out = new ArrayList<>();
+        for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+            Row row = sheet.getRow(i); if (row == null || rowBlank(row)) continue;
+            String sourceId = cell(row, 0), object = cell(row, 1), rawClass = cell(row, 2), key = cell(row, 3);
+            registerScope(scopes, sourceId, object);
+            if (sourceId.isBlank() || object.isBlank() || key.isBlank())
+                issue(issues, sheet, i, sourceId, object, "实体映射", "实体映射缺少 sourceId/sourceObject/businessKey");
+            if (rawClass.isBlank()) { issue(issues, sheet, i, sourceId, object, "实体映射", "实体类不能为空"); continue; }
+            String classIri = MappingIriResolver.resolve(rawClass, schema.getClasses());
+            if (!schema.hasClass(classIri)) { issue(issues, sheet, i, sourceId, object, "实体映射", "未知实体类 " + rawClass, classIri, "", key); continue; }
+            out.add(new EntityMappingSpec(classIri, sourceId, object, key));
+        }
+        return out;
+    }
+
+    private List<PropertyMappingSpec> inspectProperties(Sheet sheet, OntologySchema schema,
+                                                        List<MappingIssue> issues, Set<MappingScope> scopes) {
+        List<PropertyMappingSpec> out = new ArrayList<>();
+        for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+            Row row = sheet.getRow(i); if (row == null || rowBlank(row)) continue;
+            String sourceId = cell(row, 0), object = cell(row, 1), rawClass = cell(row, 2), path = cell(row, 3), rawProperty = cell(row, 4);
+            registerScope(scopes, sourceId, object);
+            if (rawProperty.isBlank()) continue;
+            if (sourceId.isBlank() || object.isBlank() || path.isBlank())
+                issue(issues, sheet, i, sourceId, object, "属性映射", "属性映射缺少 sourceId/sourceObject/sourcePath", rawClass, rawProperty, path);
+            String classIri = MappingIriResolver.resolve(rawClass, schema.getClasses());
+            String propertyIri = MappingIriResolver.resolve(rawProperty, schema.getDatatypeProperties());
+            boolean valid = true;
+            if (!schema.hasClass(classIri)) { issue(issues, sheet, i, sourceId, object, "属性映射", "属性映射引用未知实体类 " + rawClass, classIri, propertyIri, path); valid = false; }
+            if (!schema.hasDatatypeProperty(propertyIri)) { issue(issues, sheet, i, sourceId, object, "属性映射", "未知数据属性 " + rawProperty, classIri, rawProperty, path); valid = false; }
+            if (valid) out.add(new PropertyMappingSpec(classIri, propertyIri, sourceId, object, path, cell(row, 5), parseBoolean(cell(row, 6))));
+        }
+        return out;
+    }
+
+    private List<RelationshipMappingSpec> inspectRelationships(Sheet sheet, OntologySchema schema,
+                                                                List<MappingIssue> issues, Set<MappingScope> scopes) {
+        List<RelationshipMappingSpec> out = new ArrayList<>();
+        for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+            Row row = sheet.getRow(i); if (row == null || rowBlank(row)) continue;
+            String sourceId = cell(row, 0), object = cell(row, 1), rawPredicate = cell(row, 2), rawSubject = cell(row, 3), rawObject = cell(row, 5);
+            registerScope(scopes, sourceId, object);
+            if (rawPredicate.isBlank()) continue;
+            if (sourceId.isBlank() || object.isBlank() || cell(row, 4).isBlank() || cell(row, 6).isBlank())
+                issue(issues, sheet, i, sourceId, object, "关系映射", "关系映射缺少 sourceId/sourceObject/引用字段", rawSubject, rawPredicate, cell(row, 4));
+            String predicate = MappingIriResolver.resolve(rawPredicate, schema.getObjectProperties());
+            String subject = MappingIriResolver.resolve(rawSubject, schema.getClasses());
+            String objectClass = MappingIriResolver.resolve(rawObject, schema.getClasses());
+            boolean valid = true;
+            if (!schema.hasObjectProperty(predicate)) { issue(issues, sheet, i, sourceId, object, "关系映射", "未知对象属性 " + rawPredicate, subject, rawPredicate, cell(row, 4)); valid = false; }
+            if (!schema.hasClass(subject)) { issue(issues, sheet, i, sourceId, object, "关系映射", "关系起点类不存在 " + rawSubject, subject, predicate, cell(row, 4)); valid = false; }
+            if (!schema.hasClass(objectClass)) { issue(issues, sheet, i, sourceId, object, "关系映射", "关系终点类不存在 " + rawObject, objectClass, predicate, cell(row, 6)); valid = false; }
+            if (valid) out.add(new RelationshipMappingSpec(predicate, subject, objectClass, sourceId, object, cell(row, 4), cell(row, 6), cell(row, 7)));
+        }
+        return out;
+    }
+
+    private void addSemanticIssues(MappingCatalog catalog, OntologySchema schema, List<MappingIssue> issues,
+                                   Sheet entities, Sheet properties, Sheet relationships) {
+        // Semantic checks are retained by validate(); inspection adds located issues for domain/range and duplicates.
+        for (int i = 1; i <= properties.getLastRowNum(); i++) {
+            Row row = properties.getRow(i); if (row == null || rowBlank(row)) continue;
+            String sourceId = cell(row, 0), object = cell(row, 1), rawClass = cell(row, 2), rawProperty = cell(row, 4);
+            String cls = MappingIriResolver.resolve(rawClass, schema.getClasses());
+            String prop = MappingIriResolver.resolve(rawProperty, schema.getDatatypeProperties());
+            OntologyTerm term = schema.getDatatypeProperties().get(prop);
+            if (term == null || !schema.hasClass(cls)) continue;
+            for (String domain : term.getDomains()) if (schema.hasClass(domain) && !schema.isClassCompatible(cls, domain))
+                issue(issues, properties, i, sourceId, object, "属性映射", "属性 domain 不兼容", cls, prop, cell(row, 3), MappingIriResolver.compact(domain), MappingIriResolver.compact(cls));
+        }
+        for (int i = 1; i <= relationships.getLastRowNum(); i++) {
+            Row row = relationships.getRow(i); if (row == null || rowBlank(row)) continue;
+            String sourceId = cell(row, 0), object = cell(row, 1), pred = MappingIriResolver.resolve(cell(row, 2), schema.getObjectProperties());
+            String subject = MappingIriResolver.resolve(cell(row, 3), schema.getClasses());
+            String objectClass = MappingIriResolver.resolve(cell(row, 5), schema.getClasses());
+            OntologyTerm term = schema.getObjectProperties().get(pred); if (term == null) continue;
+            for (String domain : term.getDomains()) if (schema.hasClass(domain) && !schema.isClassCompatible(subject, domain))
+                issue(issues, relationships, i, sourceId, object, "关系映射", "关系 domain 不兼容", subject, pred, cell(row, 4), MappingIriResolver.compact(domain), MappingIriResolver.compact(subject));
+            for (String range : term.getRanges()) if (schema.hasClass(range) && !schema.isClassCompatible(objectClass, range))
+                issue(issues, relationships, i, sourceId, object, "关系映射", "关系 range 不兼容", objectClass, pred, cell(row, 6), MappingIriResolver.compact(range), MappingIriResolver.compact(objectClass));
+        }
+        Set<String> seen = new HashSet<>();
+        for (int i = 1; i <= entities.getLastRowNum(); i++) { Row row = entities.getRow(i); if (row == null || rowBlank(row)) continue;
+            String key = cell(row,0)+"|"+cell(row,1)+"|"+MappingIriResolver.resolve(cell(row,2), schema.getClasses());
+            if (!seen.add(key)) issue(issues, entities, i, cell(row,0), cell(row,1), "实体映射", "实体映射重复："+key);
+        }
+    }
+
+    private void registerScope(Set<MappingScope> scopes, String sourceId, String object) {
+        if (!sourceId.isBlank() && !object.isBlank()) scopes.add(new MappingScope(sourceId, object));
+    }
+
+    private void issue(List<MappingIssue> issues, Sheet sheet, int rowIndex, String sourceId, String object,
+                       String kind, String message) { issue(issues, sheet, rowIndex, sourceId, object, kind, message, "", "", "", "", ""); }
+    private void issue(List<MappingIssue> issues, Sheet sheet, int rowIndex, String sourceId, String object,
+                       String kind, String message, String cls, String term, String path) { issue(issues, sheet, rowIndex, sourceId, object, kind, message, cls, term, path, "", ""); }
+    private void issue(List<MappingIssue> issues, Sheet sheet, int rowIndex, String sourceId, String object,
+                       String kind, String message, String cls, String term, String path, String expected, String actual) {
+        issues.add(new MappingIssue(sheet.getSheetName(), rowIndex + 1, sourceId, object, kind, message, cls, term, path, expected, actual));
     }
 
     @Override

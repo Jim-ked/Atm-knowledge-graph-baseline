@@ -56,7 +56,7 @@ class SourceMappingPreviewMainTest {
                 workbook,
                 new JenaOntologyService().load(Path.of("ontology/atm_knowledge_graph.ttl")));
 
-        assertEquals(12, catalog.getRelationships().size());
+        assertEquals(10, catalog.getRelationships().size());
         assertEquals(1, catalog.relationshipMappingsFor(
                 "preview-route-node", "route-node").size());
     }

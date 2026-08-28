@@ -86,10 +86,10 @@ public final class FixtureMappingWorkbookGenerator {
         add(rows, "Runway", "runwayCode", "跑道代码", "RUNWAY", "runwayCode", "runwayCode", "", "true");
         add(rows, "Runway", "length", "长度", "RUNWAY", "length", "length", "decimal", "false");
         add(rows, "Runway", "width", "宽度", "RUNWAY", "width", "width", "decimal", "false");
-        add(rows, "Runway", "entryLatitude", "入口纬度", "RUNWAY", "entryLatitude", "entryLatitude", "", "false");
-        add(rows, "Runway", "entryLongitude", "入口经度", "RUNWAY", "entryLongitude", "entryLongitude", "", "false");
-        add(rows, "Runway", "exitLatitude", "出口纬度", "RUNWAY", "exitLatitude", "exitLatitude", "", "false");
-        add(rows, "Runway", "exitLongitude", "出口经度", "RUNWAY", "exitLongitude", "exitLongitude", "", "false");
+        add(rows, "RunwayDirection", "entryLatitude", "入口纬度", "RUNWAY_DIRECTION", "entryLatitude", "entryLatitude", "", "false");
+        add(rows, "RunwayDirection", "entryLongitude", "入口经度", "RUNWAY_DIRECTION", "entryLongitude", "entryLongitude", "", "false");
+        add(rows, "RunwayDirection", "exitLatitude", "出口纬度", "RUNWAY_DIRECTION", "exitLatitude", "exitLatitude", "", "false");
+        add(rows, "RunwayDirection", "exitLongitude", "出口经度", "RUNWAY_DIRECTION", "exitLongitude", "exitLongitude", "", "false");
         add(rows, "RunwayDirection", "directionIdentifier", "方向标识", "RUNWAY_DIRECTION", "directionIdentifier", "directionIdentifier", "", "false");
         add(rows, "NavigationAid", "navigationAidCode", "导航台代码", "NAVIGATION_AID", "navigationAidCode", "navigationAidCode", "", "true");
         add(rows, "NavigationAid", "nameZh", "中文名称", "NAVIGATION_AID", "nameZh", "nameZh", "", "false");
@@ -152,9 +152,9 @@ public final class FixtureMappingWorkbookGenerator {
                 {"fixture", "ROUTE_NODE", "hasNode", "ScheduledFlightRoute", "scheduledRouteCode", "RouteNode", "nodeKey", "scheduled route node"},
                 {"fixture", "ROUTE_SEGMENT", "hasSegment", "Route", "routeCode", "RouteSegment", "segmentKey", "ordinary route segment"},
                 {"fixture", "ROUTE_SEGMENT", "hasSegment", "ScheduledFlightRoute", "scheduledRouteCode", "RouteSegment", "segmentKey", "scheduled route segment"},
-                {"fixture", "ROUTE_NODE", "nextNode", "RouteNode", "nodeKey", "RouteNode", "nextNodeKey", "blank on terminal node"},
                 {"fixture", "ROUTE_SEGMENT", "fromNode", "RouteSegment", "segmentKey", "RouteNode", "fromNodeKey", "segment start"},
                 {"fixture", "ROUTE_SEGMENT", "toNode", "RouteSegment", "segmentKey", "RouteNode", "toNodeKey", "segment end"},
+                {"fixture", "ROUTE_SEGMENT", "hasSegment", "Route", "routeCode", "RouteSegment", "segmentKey", "route segment index"},
                 {"fixture", "ROUTE_NODE", "refersTo", "RouteNode", "nodeKey", "NavigationAid", "navigationAidCode", "mutually exclusive locator"},
                 {"fixture", "ROUTE_NODE", "refersTo", "RouteNode", "nodeKey", "ReportingPoint", "reportingPointCode", "mutually exclusive locator"},
                 {"fixture", "AIRSPACE_GEOMETRY", "hasGeometry", "Airspace", "airspaceCode", "AirspaceGeometry", "geometryKey", "geometry record"},

@@ -54,7 +54,7 @@ class Phase3FixtureSyncIntegrationTest {
         DefaultSyncService baseSync = new DefaultSyncService(Map.of("fixture", base), mapping, store);
         baseSync.fullRebuild(OBJECTS.stream().map(name -> new SourceScope("fixture", name)).toList());
         assertEquals(122, store.stats().getEntityCount());
-        assertEquals(186, store.stats().getRelationshipCount());
+        assertEquals(162, store.stats().getRelationshipCount());
 
         EntityMappingSpec airport = entityMapping(catalog, "Airport");
         EntityMappingSpec runway = entityMapping(catalog, "Runway");
@@ -92,17 +92,17 @@ class Phase3FixtureSyncIntegrationTest {
         assertEquals("模拟报告点2", store.findEntity(missedReportingPoint).orElseThrow()
                 .getProperties().get(NS + "reportingPointName"));
         assertEquals(123, store.stats().getEntityCount());
-        assertEquals(186, store.stats().getRelationshipCount());
+        assertEquals(163, store.stats().getRelationshipCount());
 
         sync.resync("fixture", "RUNWAY", "Z001-01/19");
         assertEquals(123, store.stats().getEntityCount());
-        assertEquals(186, store.stats().getRelationshipCount());
+        assertEquals(163, store.stats().getRelationshipCount());
 
         sync.compensateSince("fixture", "REPORTING_POINT", Instant.EPOCH);
         assertEquals("模拟报告点2-补偿更新", store.findEntity(missedReportingPoint).orElseThrow()
                 .getProperties().get(NS + "reportingPointName"));
         assertEquals(123, store.stats().getEntityCount());
-        assertEquals(186, store.stats().getRelationshipCount());
+        assertEquals(163, store.stats().getRelationshipCount());
     }
 
     private EntityMappingSpec entityMapping(org.atmkg.core.model.mapping.MappingCatalog catalog, String localName) {

@@ -26,6 +26,7 @@ import org.atmkg.core.model.SourceRef;
 import org.atmkg.core.model.SourceScope;
 import org.atmkg.core.spi.GraphStore;
 import org.atmkg.core.spi.MappingEngine;
+import org.atmkg.core.spi.MappingScopeValidator;
 import org.atmkg.core.spi.SourceAdapter;
 import org.junit.jupiter.api.Test;
 
@@ -275,6 +276,35 @@ class DefaultSyncServiceTest {
         assertThrows(SyncException.class, () -> service.resync("fixture", "OBJECT", "K2"));
     }
 
+    @Test
+    void invalidScopeIsRejectedBeforeReadingOrWriting() {
+        RecordingStore store = new RecordingStore();
+        SourceAdapter source = adapter(Optional.of(RECORD));
+        MappingScopeValidator invalid = (sourceId, objectName) ->
+                org.atmkg.core.model.mapping.MappingScopeStatus.INVALID;
+        DefaultSyncService service = new DefaultSyncService(
+                Map.of("fixture", source), r -> new MappingResult(List.of(), List.of()), store,
+                notice -> {}, invalid);
+
+        assertThrows(SyncException.class, () -> service.fullSync("fixture", "OBJECT"));
+        assertEquals(0, store.replaceAttempts);
+    }
+
+    @Test
+    void fullRebuildChecksAllScopesBeforeClearingGraph() {
+        RecordingStore store = new RecordingStore();
+        MappingScopeValidator invalid = (sourceId, objectName) ->
+                "bad".equals(sourceId)
+                        ? org.atmkg.core.model.mapping.MappingScopeStatus.INVALID
+                        : org.atmkg.core.model.mapping.MappingScopeStatus.VALID;
+        DefaultSyncService service = new DefaultSyncService(
+                Map.of("bad", adapter(Optional.of(RECORD))), r -> new MappingResult(List.of(), List.of()), store,
+                notice -> {}, invalid);
+
+        assertThrows(SyncException.class, () -> service.fullRebuild(List.of(new SourceScope("bad", "OBJECT"))));
+        assertEquals(0, store.clearCount);
+    }
+
     private SourceAdapter adapter(Optional<SourceRecord> byKey) {
         return adapter(byKey, () -> byKey.map(List::of).orElseGet(List::of),
                 () -> byKey.map(List::of).orElseGet(List::of));
@@ -323,6 +353,7 @@ class DefaultSyncServiceTest {
         boolean failNextReplace;
         boolean failNextDelete;
         int deleteAttempts;
+        int clearCount;
         GraphProjectionSnapshot deleteSnapshot = GraphProjectionSnapshot.empty();
         public void initializeSchema() {}
         public void upsertEntities(Collection<GraphEntity> entities) {}
@@ -348,7 +379,7 @@ class DefaultSyncServiceTest {
         public void deleteEntity(String uid) {}
         public void deleteRelationship(String uid) {}
         public Optional<GraphEntity> findEntity(String uid) { return Optional.empty(); }
-        public void clearProject() {}
+        public void clearProject() { clearCount++; }
         public GraphStoreStats stats() { return new GraphStoreStats(0, 0); }
     }
 }

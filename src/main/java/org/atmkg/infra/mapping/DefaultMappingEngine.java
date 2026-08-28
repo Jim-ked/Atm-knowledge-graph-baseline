@@ -46,12 +46,8 @@ public final class DefaultMappingEngine implements MappingEngine {
         List<GraphRelationship> relationships = new ArrayList<>();
 
         for (EntityMappingSpec entitySpec : catalog.entityMappingsFor(record.getSourceId(), record.getObjectName())) {
-            Object keyValue = readPath(record.getFields(), entitySpec.getBusinessKey());
-            if (keyValue == null || String.valueOf(keyValue).isBlank()) {
-                throw new MappingExecutionException("实体业务主键缺失：" + entitySpec.getBusinessKey()
-                        + "，source=" + record.getSourceId() + "/" + record.getObjectName());
-            }
-            String uid = identityResolver.entityUid(entitySpec.getClassIri(), String.valueOf(keyValue));
+            String keyValue = resolveKey(record, entitySpec.getBusinessKey());
+            String uid = identityResolver.entityUid(entitySpec.getClassIri(), keyValue);
             Map<String, Object> properties = new LinkedHashMap<>();
             for (PropertyMappingSpec propertySpec : catalog.propertyMappingsFor(
                     record.getSourceId(), record.getObjectName(), entitySpec.getClassIri())) {
@@ -65,24 +61,33 @@ public final class DefaultMappingEngine implements MappingEngine {
                 }
                 properties.put(propertySpec.getPropertyIri(), transform(raw, propertySpec.getTransform()));
             }
-            entities.add(new GraphEntity(uid, entitySpec.getClassIri(), String.valueOf(keyValue), properties, provenance(record)));
+            entities.add(new GraphEntity(uid, entitySpec.getClassIri(), keyValue, properties, provenance(record)));
         }
 
         for (RelationshipMappingSpec relationshipSpec : catalog.relationshipMappingsFor(
                 record.getSourceId(), record.getObjectName())) {
-            Object subjectKey = readPath(record.getFields(), relationshipSpec.getSubjectLocator());
-            Object objectKey = readPath(record.getFields(), relationshipSpec.getObjectLocator());
-            if (isBlankValue(subjectKey) || isBlankValue(objectKey)) continue;
+            var subjectKey = MappingKeyResolver.resolveOptional(record.getFields(), relationshipSpec.getSubjectLocator());
+            var objectKey = MappingKeyResolver.resolveOptional(record.getFields(), relationshipSpec.getObjectLocator());
+            if (subjectKey.isEmpty() || objectKey.isEmpty()) continue;
             String sourceUid = identityResolver.entityUid(
-                    relationshipSpec.getSubjectClassIri(), String.valueOf(subjectKey));
+                    relationshipSpec.getSubjectClassIri(), subjectKey.get());
             String targetUid = identityResolver.entityUid(
-                    relationshipSpec.getObjectClassIri(), String.valueOf(objectKey));
+                    relationshipSpec.getObjectClassIri(), objectKey.get());
             String relationUid = identityResolver.relationshipUid(relationshipSpec, sourceUid, targetUid, record);
             relationships.add(new GraphRelationship(relationUid, relationshipSpec.getPredicateIri(), sourceUid, targetUid,
                     Map.of(), provenance(record)));
         }
 
         return new MappingResult(entities, relationships);
+    }
+
+    private String resolveKey(SourceRecord record, String expression) {
+        try {
+            return MappingKeyResolver.resolve(record.getFields(), expression);
+        } catch (MappingExecutionException ex) {
+            throw new MappingExecutionException(ex.getMessage() + "，source="
+                    + record.getSourceId() + "/" + record.getObjectName(), ex);
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -95,10 +100,6 @@ public final class DefaultMappingEngine implements MappingEngine {
             if (current == null) return null;
         }
         return current;
-    }
-
-    private boolean isBlankValue(Object value) {
-        return value == null || (value instanceof String && ((String) value).isBlank());
     }
 
     private Object transform(Object value, String transform) {
