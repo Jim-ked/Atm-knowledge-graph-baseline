@@ -6,8 +6,8 @@
 
 截至当前基线，已报告并通过：
 
-- Maven：161 tests，0 failures，0 errors，4 skipped，BUILD SUCCESS；
-- Viewer：34/34 tests passed；
+- Maven：176 tests，0 failures，0 errors，4 skipped，BUILD SUCCESS；
+- Viewer：39/39 tests passed；
 - Viewer build：成功；
 - G6 正式浏览器 Gate：默认 G6、展开/收起、pin/unpin、标签模式通过，浏览器 console error 为 0；
 - `git diff --check`：通过。
@@ -96,8 +96,8 @@
 
 正式 Viewer 已收敛为 G6-only。Sigma、Cytoscape、Graphology 及其实验依赖、adapter、workbench 和 gate 已从正式实现中删除。
 
-当前 Viewer 保留实体/K-hop/路径查询、节点与关系详情、标签模式、展开/收起、pin/unpin、重新平衡等已验证交互。
-只读 Cypher 后端已验证：通过 `EXPLAIN` + `QueryType.READ_ONLY` 判定后执行，一次返回 table rows 与 GraphDTO graph；标量结果正常返回空 graph，写查询、贡献节点和其它 project 均有明确边界。本轮未修改 Viewer，新 CypherResultDTO 的 Table/Raw/Graph 适配尚未在 Viewer 验证。
+当前 Viewer 保留实体/K-hop/路径查询、节点与关系详情、标签模式、展开/收起、pin/unpin、重新平衡等已验证交互，并已完成 Graph/Table/Raw 三种结果视图与业务键 lookup 接线。
+只读 Cypher 后端已验证：通过 `EXPLAIN` + `QueryType.READ_ONLY` 判定后执行，一次返回 table rows 与 GraphDTO graph；标量结果正常返回空 graph，写查询、贡献节点和其它 project 均有明确边界。Viewer 已真实联调 Cypher scalar/table、Cypher graph，以及 `/schema` 中文 class、关系和属性 label。
 
 ## 7. 尚未验证/未实现
 

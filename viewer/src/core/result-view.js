@@ -1,3 +1,5 @@
+import { localName } from './schema-catalog.js';
+
 const clone = value => structuredClone(value ?? {});
 const compact = value => typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value ?? '');
 
@@ -14,24 +16,29 @@ export class ResultState {
     return this;
   }
   defaultView() { return this.graph.nodes.length || this.graph.relationships.length ? 'graph' : this.rows.length ? 'table' : 'graph'; }
-  filteredGraph() {
+  filteredGraph(catalog = null) {
     const { classIri, relationshipType } = this.filters;
-    const nodes = this.graph.nodes.filter(node => !classIri || node.kind === classIri || node.labels?.includes(classIri));
+    const selectedClass = classIri ? localName(classIri) : '';
+    const selectedRelationship = relationshipType ? localName(relationshipType) : '';
+    const nodes = this.graph.nodes.filter(node => !selectedClass
+      || localName(node.kind) === selectedClass
+      || node.labels?.some(label => localName(label) === selectedClass));
     const ids = new Set(nodes.map(node => node.id));
     const relationships = this.graph.relationships.filter(rel => ids.has(rel.source) && ids.has(rel.target)
-      && (!relationshipType || rel.type === relationshipType));
+      && (!selectedRelationship || localName(rel.type) === selectedRelationship));
     return { ...clone(this.graph), nodes, relationships };
   }
-  graphTableRows(graph = this.graph) {
+  graphTableRows(catalog = null, graph = this.graph) {
     const nodeRows = graph.nodes.map(node => ({ type: '实体', identifier: node.caption ?? node.id,
-      category: node.kind ?? node.labels?.[0] ?? '', source: '', target: '', properties: compact(node.properties) }));
+      category: catalog?.classLabel(node.kind ?? node.labels?.[0] ?? '') ?? node.kind ?? node.labels?.[0] ?? '', source: '', target: '', properties: compact(node.properties) }));
     const byId = new Map(graph.nodes.map(node => [node.id, node.caption ?? node.id]));
-    const relRows = graph.relationships.map(rel => ({ type: '关系', identifier: rel.type,
+    const relRows = graph.relationships.map(rel => ({ type: '关系',
+      identifier: catalog?.relationshipLabel(rel.type) ?? rel.type,
       category: '', source: byId.get(rel.source) ?? rel.source, target: byId.get(rel.target) ?? rel.target,
       properties: compact(rel.properties) }));
     return [...nodeRows, ...relRows];
   }
-  tableRows() { return this.rows.length ? this.rows : this.graphTableRows(this.filteredGraph()); }
+  tableRows(catalog = null) { return this.rows.length ? this.rows : this.graphTableRows(catalog, this.filteredGraph(catalog)); }
   tableColumns() { return this.columns.length ? this.columns : ['type', 'identifier', 'category', 'source', 'target', 'properties']; }
 }
 
@@ -45,7 +52,7 @@ export class ResultView extends ResultState {
 }
 
 export function renderTable(container, state, catalog = null) {
-  const rows = state.tableRows();
+  const rows = state.tableRows(catalog);
   const columns = state.tableColumns();
   const table = document.createElement('table'); table.className = 'result-table';
   const head = document.createElement('thead'); const tr = document.createElement('tr');
