@@ -24,6 +24,7 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.atmkg.core.model.SourceRecord;
 import org.atmkg.core.spi.SourceAdapter;
+import org.atmkg.core.spi.SourceFieldProvider;
 import org.atmkg.infra.source.compose.RawRecord;
 import org.atmkg.infra.source.compose.RecordComposer;
 import org.atmkg.infra.source.compose.RecordCompositionSpec;
@@ -38,7 +39,7 @@ import org.atmkg.infra.source.config.ConfiguredSource;
  * 加航空类判断会破坏 SourceAdapter 物理边界；把文件名放进 sourceKey 会破坏跨文件稳定身份。
  * 记录数/字段错先看 source-preview 的实际匹配文件和 Sheet，再查 headerRow/keyFields/groupBy/orderBy。
  */
-public final class ExcelSourceAdapter implements SourceAdapter {
+public final class ExcelSourceAdapter implements SourceAdapter, SourceFieldProvider {
     private static final String ADAPTER = "excel";
 
     private final String sourceId;
@@ -82,6 +83,26 @@ public final class ExcelSourceAdapter implements SourceAdapter {
     }
 
     @Override
+    public List<String> fieldPaths(String objectName) {
+        ObjectSpec spec = requireObject(objectName);
+        List<String> expected = null;
+        Path expectedFile = null;
+        for (Path file : matchingFiles(spec.filesPattern)) {
+            try (InputStream input = Files.newInputStream(file); Workbook workbook = new XSSFWorkbook(input)) {
+                List<String> headers = readHeaders(file, selectSheet(workbook, spec, file), spec);
+                if (expected == null) { expected = headers; expectedFile = file; }
+                else if (!expected.equals(headers)) {
+                    throw new IllegalStateException("Excel 多文件表头不一致：" + expectedFile + " 与 " + file
+                            + "，期望=" + expected + "，实际=" + headers);
+                }
+            } catch (IOException ex) {
+                throw new IllegalStateException("Excel 字段发现失败：" + file, ex);
+            }
+        }
+        return spec.composition.logicalFieldPaths(expected == null ? List.of() : expected);
+    }
+
+    @Override
     public Optional<SourceRecord> readByKey(String objectName, String sourceKey) {
         if (sourceKey == null || sourceKey.isBlank()) throw new IllegalArgumentException("sourceKey 不能为空");
         for (SourceRecord record : readAll(objectName)) {
@@ -115,21 +136,8 @@ public final class ExcelSourceAdapter implements SourceAdapter {
     }
 
     private List<RawRecord> readRows(Path file, Sheet sheet, ObjectSpec spec, Instant timestamp) {
+        List<String> headers = readHeaders(file, sheet, spec);
         int headerIndex = spec.headerRow - 1;
-        Row headerRow = sheet.getRow(headerIndex);
-        if (headerRow == null) throw new IllegalStateException("Excel 缺少表头：" + file + " / " + sheet.getSheetName());
-        List<String> headers = new ArrayList<>();
-        Set<String> names = new LinkedHashSet<>();
-        int lastColumn = headerRow.getLastCellNum();
-        if (lastColumn < 1) throw new IllegalStateException("Excel 表头为空：" + file + " / " + sheet.getSheetName());
-        for (int column = 0; column < lastColumn; column++) {
-            String name = cell(headerRow, column).trim();
-            if (name.isBlank()) throw new IllegalStateException("Excel 表头存在空字段：" + file + " / " + sheet.getSheetName()
-                    + " / column=" + (column + 1));
-            if (!names.add(name)) throw new IllegalStateException("Excel 表头字段重复：" + file + " / " + sheet.getSheetName()
-                    + " / " + name);
-            headers.add(name);
-        }
 
         List<RawRecord> out = new ArrayList<>();
         for (int index = headerIndex + 1; index <= sheet.getLastRowNum(); index++) {
@@ -146,6 +154,25 @@ public final class ExcelSourceAdapter implements SourceAdapter {
                     file + " / " + sheet.getSheetName() + " / row=" + (index + 1)));
         }
         return out;
+    }
+
+    private List<String> readHeaders(Path file, Sheet sheet, ObjectSpec spec) {
+        int headerIndex = spec.headerRow - 1;
+        Row headerRow = sheet.getRow(headerIndex);
+        if (headerRow == null) throw new IllegalStateException("Excel 缺少表头：" + file + " / " + sheet.getSheetName());
+        List<String> headers = new ArrayList<>();
+        Set<String> names = new LinkedHashSet<>();
+        int lastColumn = headerRow.getLastCellNum();
+        if (lastColumn < 1) throw new IllegalStateException("Excel 表头为空：" + file + " / " + sheet.getSheetName());
+        for (int column = 0; column < lastColumn; column++) {
+            String name = cell(headerRow, column);
+            if (name.isBlank()) throw new IllegalStateException("Excel 表头存在空字段：" + file + " / " + sheet.getSheetName()
+                    + " / column=" + (column + 1));
+            if (!names.add(name)) throw new IllegalStateException("Excel 表头字段重复：" + file + " / " + sheet.getSheetName()
+                    + " / " + name);
+            headers.add(name);
+        }
+        return List.copyOf(headers);
     }
 
     private Sheet selectSheet(Workbook workbook, ObjectSpec spec, Path file) {

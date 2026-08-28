@@ -198,6 +198,49 @@ class ExcelSourceAdapterTest {
         assertThrows(IllegalStateException.class, () -> list(adapter.readAll("route-base")));
     }
 
+    @Test
+    void fieldPathsReadHeadersOnlyAndAdjacentLogicalPaths() throws Exception {
+        Path data = Files.createDirectories(temp.resolve("data"));
+        writeWorkbook(data.resolve("rows.xlsx"), "数据", List.of(
+                List.of("route_id", "sequence_no", "__sourceKey"),
+                List.of("bad-value", "also-bad", "ignored")));
+        ExcelSourceAdapter adapter = adapter("""
+                sources:
+                  - sourceId: excel-main
+                    adapter: excel
+                    root: data
+                    objects:
+                      rows:
+                        files: "rows.xlsx"
+                        sheet: 数据
+                        keyFields: [route_id]
+                        recordMode: adjacent_next
+                        groupBy: [route_id]
+                        orderBy: sequence_no
+                """);
+        assertEquals(List.of("route_id", "sequence_no", "current.route_id", "next.route_id",
+                "current.sequence_no", "next.sequence_no"), adapter.fieldPaths("rows"));
+    }
+
+    @Test
+    void fieldPathsRejectInconsistentHeadersAcrossFiles() throws Exception {
+        Path data = Files.createDirectories(temp.resolve("data"));
+        writeWorkbook(data.resolve("rows1.xlsx"), "数据", List.of(List.of("id", "name")));
+        writeWorkbook(data.resolve("rows2.xlsx"), "数据", List.of(List.of("id", "other")));
+        ExcelSourceAdapter adapter = adapter("""
+                sources:
+                  - sourceId: excel-main
+                    adapter: excel
+                    root: data
+                    objects:
+                      rows:
+                        files: "rows*.xlsx"
+                        sheet: 数据
+                        keyFields: [id]
+                """);
+        assertThrows(IllegalStateException.class, () -> adapter.fieldPaths("rows"));
+    }
+
     private ExcelSourceAdapter adapter(String yaml) throws Exception {
         Path config = temp.resolve("sources.yaml");
         Files.writeString(config, yaml);

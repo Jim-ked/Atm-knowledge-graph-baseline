@@ -8,14 +8,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import org.atmkg.core.model.OntologySchema;
 import org.atmkg.core.model.OntologyTerm;
-import org.atmkg.core.model.SourceRecord;
 import org.atmkg.core.spi.SourceAdapter;
+import org.atmkg.core.spi.SourceFieldProvider;
 import org.atmkg.infra.mapping.MappingAssist;
 import org.atmkg.infra.ontology.JenaOntologyService;
 import org.atmkg.infra.source.SourceAdapterFactory;
@@ -24,8 +21,6 @@ import org.atmkg.infra.source.config.SourceConfig;
 
 /** Human-in-the-loop helper for appending strict entity/property mapping candidates. */
 public final class MappingAssistMain {
-    private static final int SAMPLE_LIMIT = 5;
-
     private MappingAssistMain() {}
 
     public static void main(String[] args) {
@@ -65,9 +60,11 @@ public final class MappingAssistMain {
         SourceEntry entry = entries.get(readChoice(input, entries.size(), "输入编号：") - 1);
 
         SourceAdapter adapter = new SourceAdapterFactory().create(entry.source(), projectRoot);
-        List<SourceRecord> sample = SourcePreviewMain.readLimited(
-                adapter.readAll(entry.sourceObject()), SAMPLE_LIMIT);
-        List<String> fieldPaths = fieldPaths(sample);
+        if (!(adapter instanceof SourceFieldProvider provider)) {
+            System.out.println("当前 Adapter 不支持结构字段发现，不读取业务数据。" );
+            return;
+        }
+        List<String> fieldPaths = provider.fieldPaths(entry.sourceObject());
         System.out.println();
         System.out.println("检测到的字段路径（仅显示字段名，不显示业务数据值）：");
         if (fieldPaths.isEmpty()) {
@@ -121,22 +118,6 @@ public final class MappingAssistMain {
                     + "已保留且未写入任何候选，请人工处理。");
         }
         System.out.println("PoiMappingRegistry 已重新加载并验证完整工作簿。");
-    }
-
-    static List<String> fieldPaths(List<SourceRecord> records) {
-        Set<String> paths = new LinkedHashSet<>();
-        for (SourceRecord record : records) collectPaths(record.getFields(), "", paths);
-        return List.copyOf(paths);
-    }
-
-    private static void collectPaths(Map<?, ?> values, String prefix, Set<String> paths) {
-        for (Map.Entry<?, ?> entry : values.entrySet()) {
-            String name = String.valueOf(entry.getKey());
-            if ("__sourceKey".equals(name)) continue;
-            String path = prefix.isEmpty() ? name : prefix + "." + name;
-            if (entry.getValue() instanceof Map<?, ?> nested) collectPaths(nested, path, paths);
-            else paths.add(path);
-        }
     }
 
     private static void printAnalysis(SourceEntry entry, OntologyTerm selectedClass, String businessKey,

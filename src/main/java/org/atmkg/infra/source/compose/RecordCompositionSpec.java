@@ -31,6 +31,24 @@ public record RecordCompositionSpec(RecordMode recordMode, List<String> keyField
         }
     }
 
+    /** Returns mapping-visible paths derived solely from physical column names. */
+    public List<String> logicalFieldPaths(List<String> physicalFields) {
+        if (physicalFields == null) throw new IllegalArgumentException("physicalFields 不能为空");
+        List<String> base = new ArrayList<>();
+        for (String field : physicalFields) {
+            if (field == null || field.isBlank()) continue;
+            String value = field.trim();
+            if (!"__sourceKey".equals(value) && !base.contains(value)) base.add(value);
+        }
+        if (recordMode != RecordMode.ADJACENT_NEXT) return List.copyOf(base);
+        List<String> out = new ArrayList<>(base);
+        for (String field : base) {
+            out.add("current." + field);
+            out.add("next." + field);
+        }
+        return List.copyOf(out);
+    }
+
     private static List<String> fields(List<String> input, String name, boolean required) {
         if (input == null) {
             if (required) throw new IllegalArgumentException(name + " 不能为空");

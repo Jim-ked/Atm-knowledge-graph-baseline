@@ -23,6 +23,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 import org.atmkg.core.model.SourceRecord;
 import org.atmkg.core.spi.SourceAdapter;
+import org.atmkg.core.spi.SourceFieldProvider;
 import org.atmkg.infra.source.compose.RawRecord;
 import org.atmkg.infra.source.compose.RecordComposer;
 import org.atmkg.infra.source.compose.RecordCompositionSpec;
@@ -38,7 +39,7 @@ import org.atmkg.infra.source.config.ConfiguredSource;
  * SQL、加航空字段/数据库厂商业务分支会破坏安全和通用边界。读取失败先查 driver/url/env/SELECT 权限；
  * “缺少配置字段”查 ResultSet 列名；增量问题查 watermarkField 类型和索引。无 hard DELETE/JOIN/持久化游标。
  */
-public final class JdbcSourceAdapter implements SourceAdapter {
+public final class JdbcSourceAdapter implements SourceAdapter, SourceFieldProvider {
     private static final String ADAPTER = "jdbc";
     private static final Pattern QUALIFIED_IDENTIFIER = Pattern.compile(
             "[\\p{L}_][\\p{L}\\p{N}_$]*(?:\\.[\\p{L}_][\\p{L}\\p{N}_$]*)*");
@@ -54,6 +55,22 @@ public final class JdbcSourceAdapter implements SourceAdapter {
 
     public JdbcSourceAdapter(ConfiguredSource source) {
         this(source, System.getenv());
+    }
+
+    @Override
+    public List<String> fieldPaths(String objectName) {
+        ObjectSpec spec = requireObject(objectName);
+        String sql = "SELECT * FROM " + spec.relation + " WHERE 1 = 0";
+        try (Connection connection = openConnection(); PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setFetchSize(fetchSize);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                List<String> columns = metadataColumns(resultSet.getMetaData(), sourceId, objectName);
+                requireConfiguredColumns(columns, spec, objectName);
+                return spec.composition.logicalFieldPaths(columns);
+            }
+        } catch (SQLException ex) {
+            throw new IllegalStateException("JDBC 字段发现失败：" + sourceId + "/" + objectName, ex);
+        }
     }
 
     JdbcSourceAdapter(ConfiguredSource source, Map<String, String> environment) {
@@ -159,10 +176,7 @@ public final class JdbcSourceAdapter implements SourceAdapter {
         Connection connection = null;
         PreparedStatement statement = null;
         try {
-            Properties properties = new Properties();
-            properties.setProperty("user", username);
-            properties.setProperty("password", password);
-            connection = DriverManager.getConnection(url, properties);
+            connection = openConnection();
             statement = connection.prepareStatement(sql);
             statement.setFetchSize(fetchSize);
             if (maxRows > 0) statement.setMaxRows(maxRows);
@@ -174,6 +188,39 @@ public final class JdbcSourceAdapter implements SourceAdapter {
             close(connection);
             throw new IllegalStateException("JDBC 读取失败：" + sourceId + "/" + objectName, ex);
         }
+    }
+
+    private Connection openConnection() throws SQLException {
+        Properties properties = new Properties();
+        properties.setProperty("user", username);
+        properties.setProperty("password", password);
+        return DriverManager.getConnection(url, properties);
+    }
+
+    private static List<String> metadataColumns(ResultSetMetaData metadata, String sourceId, String objectName)
+            throws SQLException {
+        List<String> columns = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (int index = 1; index <= metadata.getColumnCount(); index++) {
+            String label = metadata.getColumnLabel(index);
+            if (label == null || label.isBlank()) label = metadata.getColumnName(index);
+            if (label == null || label.isBlank() || !seen.add(label)) {
+                throw new IllegalStateException("JDBC 结果字段名为空或重复：" + sourceId + "/" + objectName);
+            }
+            columns.add(label);
+        }
+        return List.copyOf(columns);
+    }
+
+    private static void requireConfiguredColumns(List<String> columns, ObjectSpec spec, String objectName) {
+        for (String key : spec.keyFields) requireColumn(columns, key, objectName);
+        for (String group : spec.composition.groupBy()) requireColumn(columns, group, objectName);
+        if (!spec.composition.orderBy().isBlank()) requireColumn(columns, spec.composition.orderBy(), objectName);
+        if (spec.watermarkField != null) requireColumn(columns, spec.watermarkField, objectName);
+    }
+
+    private static void requireColumn(List<String> columns, String name, String objectName) {
+        if (!columns.contains(name)) throw new IllegalStateException("JDBC 结果缺少配置字段：" + objectName + "/" + name);
     }
 
     private ObjectSpec requireObject(String objectName) {
@@ -391,22 +438,11 @@ public final class JdbcSourceAdapter implements SourceAdapter {
             this.sourceId = sourceId;
             this.objectName = objectName;
             this.spec = spec;
-            this.columns = new ArrayList<>();
+            this.columns = new ArrayList<>(metadataColumns(resultSet.getMetaData(), sourceId, objectName));
             this.columnIndexes = new LinkedHashMap<>();
-            ResultSetMetaData metadata = resultSet.getMetaData();
-            for (int index = 1; index <= metadata.getColumnCount(); index++) {
-                String label = metadata.getColumnLabel(index);
-                if (label == null || label.isBlank()) label = metadata.getColumnName(index);
-                if (label == null || label.isBlank() || columnIndexes.putIfAbsent(label, index) != null) {
-                    close();
-                    throw new IllegalStateException("JDBC 结果字段名为空或重复：" + sourceId + "/" + objectName);
-                }
-                columns.add(label);
-            }
-            for (String key : spec.keyFields) requireColumn(key);
-            for (String group : spec.composition.groupBy()) requireColumn(group);
-            if (!spec.composition.orderBy().isBlank()) requireColumn(spec.composition.orderBy());
-            if (spec.watermarkField != null) requireColumn(spec.watermarkField);
+            for (int index = 0; index < columns.size(); index++) columnIndexes.put(columns.get(index), index + 1);
+            try { requireConfiguredColumns(columns, spec, objectName); }
+            catch (RuntimeException ex) { close(); throw ex; }
         }
 
         @Override
@@ -444,13 +480,6 @@ public final class JdbcSourceAdapter implements SourceAdapter {
             } catch (SQLException ex) {
                 close();
                 throw new IllegalStateException("JDBC 记录读取失败：" + sourceId + "/" + objectName, ex);
-            }
-        }
-
-        private void requireColumn(String name) {
-            if (!columnIndexes.containsKey(name)) {
-                close();
-                throw new IllegalStateException("JDBC 结果缺少配置字段：" + sourceId + "/" + objectName + "/" + name);
             }
         }
 

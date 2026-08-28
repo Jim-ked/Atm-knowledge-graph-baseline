@@ -295,6 +295,24 @@ class JdbcSourceAdapterTest {
         assertTrue(DRIVER.executions.isEmpty());
     }
 
+    @Test
+    void fieldPathsUsesMetadataOnlyAndReturnsAdjacentLogicalPaths() throws Exception {
+        JdbcSourceAdapter adapter = adapter("""
+                objects:
+                  route-adjacent:
+                    table: compose_rows
+                    keyFields: [route_id, sequence_no]
+                    recordMode: adjacent_next
+                    groupBy: [route_id]
+                    orderBy: sequence_no
+                """);
+        assertEquals(List.of("route_id", "sequence_no", "MixedCaseCaption", "modified_at",
+                "current.route_id", "next.route_id", "current.sequence_no", "next.sequence_no",
+                "current.MixedCaseCaption", "next.MixedCaseCaption", "current.modified_at", "next.modified_at"),
+                adapter.fieldPaths("route-adjacent"));
+        assertEquals("SELECT * FROM compose_rows WHERE 1 = 0", DRIVER.executions.get(0).sql());
+    }
+
     private JdbcSourceAdapter adapter(String objectConfiguration) throws Exception {
         Path config = temp.resolve("sources.yaml");
         Files.writeString(config, """

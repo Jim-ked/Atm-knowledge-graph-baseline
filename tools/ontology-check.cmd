@@ -1,3 +1,4 @@
+
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 chcp 65001 >nul
@@ -11,17 +12,17 @@ if not defined JAVA_COMMAND if not "%JAVA_HOME%"=="" if exist "%JAVA_HOME%\java.
 if not defined JAVA_COMMAND for %%J in (java.exe) do set "JAVA_COMMAND=%%~$PATH:J"
 pushd "%PROJECT_ROOT%"
 if exist "target\atm-knowledge-graph-1.0-SNAPSHOT.jar" (
-  if not defined JAVA_COMMAND (echo 未找到 Java。& popd& exit /b 2)
-  set "CP=target\atm-knowledge-graph-1.0-SNAPSHOT.jar"
-  if exist "target\lib" set "CP=%CP%;target\lib\*"
-  "!JAVA_COMMAND!" -cp "!CP!" org.atmkg.tools.MappingAssistMain
+ if not defined JAVA_COMMAND (echo 未找到 Java。& popd& exit /b 2)
+ set "CP=target\atm-knowledge-graph-1.0-SNAPSHOT.jar"
+ if exist "target\lib" set "CP=%CP%;target\lib\*"
+ "!JAVA_COMMAND!" -cp "!CP!" org.atmkg.tools.OntologyCheckMain %*
 ) else (
-  set "MAVEN_COMMAND="
-  if not "%MAVEN_HOME%"=="" if exist "%MAVEN_HOME%\bin\mvn.cmd" set "MAVEN_COMMAND=%MAVEN_HOME%\bin\mvn.cmd"
-  if not defined MAVEN_COMMAND if not "%MAVEN_HOME%"=="" if exist "%MAVEN_HOME%\mvn.cmd" set "MAVEN_COMMAND=%MAVEN_HOME%\mvn.cmd"
-  if not defined MAVEN_COMMAND for %%M in (mvn.cmd) do set "MAVEN_COMMAND=%%~$PATH:M"
-  if not defined MAVEN_COMMAND (echo 未找到已打包 runtime，也未找到 Maven。& popd& exit /b 2)
-  call "!MAVEN_COMMAND!" -q -DskipTests compile org.codehaus.mojo:exec-maven-plugin:3.5.0:java "-Dexec.mainClass=org.atmkg.tools.MappingAssistMain"
+ set "MAVEN_COMMAND="
+ if not "%MAVEN_HOME%"=="" if exist "%MAVEN_HOME%\bin\mvn.cmd" set "MAVEN_COMMAND=%MAVEN_HOME%\bin\mvn.cmd"
+ if not defined MAVEN_COMMAND if not "%MAVEN_HOME%"=="" if exist "%MAVEN_HOME%\mvn.cmd" set "MAVEN_COMMAND=%MAVEN_HOME%\mvn.cmd"
+ if not defined MAVEN_COMMAND for %%M in (mvn.cmd) do set "MAVEN_COMMAND=%%~$PATH:M"
+ if not defined MAVEN_COMMAND (echo 未找到已打包 runtime，也未找到 Maven。& popd& exit /b 2)
+ call "!MAVEN_COMMAND!" -q -DskipTests compile org.codehaus.mojo:exec-maven-plugin:3.5.0:java "-Dexec.mainClass=org.atmkg.tools.OntologyCheckMain" "-Dexec.args=%*"
 )
 set "RESULT=%ERRORLEVEL%"
 popd
