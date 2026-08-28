@@ -80,7 +80,7 @@ public final class SourcePreviewMain {
         preview(configFile, entry.source().getSourceId(), entry.objectName(), 5);
     }
 
-    private static Path selectConfigFile() {
+    static Path selectConfigFile() {
         Path local = Path.of("config", "sources.local.yaml").toAbsolutePath().normalize();
         if (java.nio.file.Files.isRegularFile(local)) return local;
         Path formal = Path.of("config", "sources.yaml").toAbsolutePath().normalize();
