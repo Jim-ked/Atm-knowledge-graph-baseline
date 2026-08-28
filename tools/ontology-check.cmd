@@ -16,8 +16,7 @@ set "RUNTIME_COMPLETE="
 if exist "target\atm-knowledge-graph-1.0-SNAPSHOT.jar" if exist "target\lib\*.jar" set "RUNTIME_COMPLETE=1"
 if defined RUNTIME_COMPLETE (
  if not defined JAVA_COMMAND (echo 未找到 Java。& popd& exit /b 2)
- set "CP=target\atm-knowledge-graph-1.0-SNAPSHOT.jar"
- if exist "target\lib" set "CP=%CP%;target\lib\*"
+ set "CP=target\atm-knowledge-graph-1.0-SNAPSHOT.jar;target\lib\*"
  "!JAVA_COMMAND!" -cp "!CP!" org.atmkg.tools.OntologyCheckMain %*
 ) else (
  set "MAVEN_COMMAND="
