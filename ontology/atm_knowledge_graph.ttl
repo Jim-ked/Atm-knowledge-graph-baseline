@@ -23,7 +23,7 @@ atmkg:Airport a owl:Class ; rdfs:subClassOf atmkg:AviationBaseObject ;
     rdfs:label "机场"@zh-CN ; rdfs:comment "机场实体；airportCode 是本项目可使用的机场业务代码，未来没有 ICAO 四字码的机场仍可使用 airportCode。"@zh-CN .
 
 atmkg:Runway a owl:Class ; rdfs:subClassOf atmkg:AviationBaseObject ;
-    rdfs:label "跑道"@zh-CN ; rdfs:comment "表示物理跑道，长度和宽度属于物理跑道；CODE 包含机场四字码与双向跑道码。"@zh-CN .
+    rdfs:label "跑道"@zh-CN ; rdfs:comment "表示物理跑道，长度和宽度属于物理跑道；当前民航源数据中的业务代码可由机场代码和双向跑道标识组合形成。"@zh-CN .
 
 atmkg:RunwayDirection a owl:Class ;
     rdfs:label "跑道方向"@zh-CN ; rdfs:comment "保存一个物理跑道具体方向的方向标识以及该方向的入口/出口位置、高程等方向属性。"@zh-CN .
@@ -72,13 +72,13 @@ atmkg:BoundaryPoint a owl:Class ;
 
 # Object Properties
 atmkg:hasRunway a owl:ObjectProperty ; rdfs:domain atmkg:Airport ; rdfs:range atmkg:Runway ;
-    rdfs:label "具有跑道"@zh-CN ; rdfs:comment "机场索引四字码与 Runway CODE 解析四字码一致时可自动建立；冲突或单一依据时留待人工检查。"@zh-CN .
+    rdfs:label "具有跑道"@zh-CN ; rdfs:comment "基于明确的机场代码或引用字段连接机场与物理跑道；冲突或单一依据时留待人工检查。"@zh-CN .
 
 atmkg:hasDirection a owl:ObjectProperty ; rdfs:domain atmkg:Runway ; rdfs:range atmkg:RunwayDirection ;
     rdfs:label "具有跑道方向"@zh-CN ; rdfs:comment "连接物理跑道与其两个运行方向。"@zh-CN .
 
 atmkg:hasNode a owl:ObjectProperty ; rdfs:domain atmkg:RouteSequence ; rdfs:range atmkg:RouteNode ;
-    rdfs:label "具有节点"@zh-CN ; rdfs:comment "连接 Route、ScheduledFlightRoute 或 PlannedFlightRoute 与其顺序节点。"@zh-CN .
+    rdfs:label "具有节点"@zh-CN ; rdfs:comment "路线结构的组成节点；顺序由 RouteSegment/fromNode/toNode 表达。"@zh-CN .
 
 atmkg:hasSegment a owl:ObjectProperty ; rdfs:domain atmkg:RouteSequence ; rdfs:range atmkg:RouteSegment ;
     rdfs:label "具有航段"@zh-CN ; rdfs:comment "连接 Route、ScheduledFlightRoute 或 PlannedFlightRoute 与其路线航段。"@zh-CN .
@@ -140,7 +140,7 @@ atmkg:transitionLevel a owl:DatatypeProperty ; rdfs:domain atmkg:Airport ; rdfs:
 atmkg:magneticVariation a owl:DatatypeProperty ; rdfs:range xsd:string ; rdfs:label "磁差"@zh-CN ; rdfs:comment "保存实际民航数据中的磁差幅度和 E/W 方向。"@zh-CN .
 
 # Runway and direction
-atmkg:runwayCode a owl:DatatypeProperty ; rdfs:domain atmkg:Runway ; rdfs:range xsd:string ; rdfs:label "跑道 CODE"@zh-CN ; rdfs:comment "物理跑道代码，由机场四字码和双向跑道码组成。"@zh-CN .
+atmkg:runwayCode a owl:DatatypeProperty ; rdfs:domain atmkg:Runway ; rdfs:range xsd:string ; rdfs:label "跑道 CODE"@zh-CN ; rdfs:comment "物理跑道业务代码；当前民航源数据可由机场代码和双向跑道标识组合形成。"@zh-CN .
 atmkg:length a owl:DatatypeProperty ; rdfs:domain atmkg:Runway ; rdfs:range xsd:decimal ; rdfs:label "跑道长度"@zh-CN ; rdfs:comment "保存物理跑道长度。"@zh-CN .
 atmkg:width a owl:DatatypeProperty ; rdfs:domain atmkg:Runway ; rdfs:range xsd:decimal ; rdfs:label "跑道宽度"@zh-CN ; rdfs:comment "保存物理跑道宽度。"@zh-CN .
 atmkg:directionIdentifier a owl:DatatypeProperty ; rdfs:domain atmkg:RunwayDirection ; rdfs:range xsd:string ; rdfs:label "跑道方向标识"@zh-CN ; rdfs:comment "区分物理跑道的两个运行方向。"@zh-CN .

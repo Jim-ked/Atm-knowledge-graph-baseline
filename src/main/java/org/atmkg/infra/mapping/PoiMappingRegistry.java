@@ -90,13 +90,13 @@ public final class PoiMappingRegistry implements MappingRegistry {
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
             Row row = sheet.getRow(i); if (row == null || rowBlank(row)) continue;
             String sourceId = cell(row, 0), object = cell(row, 1), rawClass = cell(row, 2), key = cell(row, 3);
+            if (rawClass.isBlank()) continue;
             registerScope(scopes, sourceId, object);
             boolean rowValid = true;
             if (sourceId.isBlank() || object.isBlank() || key.isBlank()) {
                 issue(issues, sheet, i, sourceId, object, "实体映射", "实体映射缺少 sourceId/sourceObject/businessKey");
                 rowValid = false;
             }
-            if (rawClass.isBlank()) { issue(issues, sheet, i, sourceId, object, "实体映射", "实体类不能为空"); continue; }
             String classIri = MappingIriResolver.resolve(rawClass, schema.getClasses());
             if (!schema.hasClass(classIri)) { issue(issues, sheet, i, sourceId, object, "实体映射", "未知实体类 " + rawClass, classIri, "", key); rowValid = false; }
             if (rowValid) out.add(new EntityMappingSpec(classIri, sourceId, object, key));
@@ -110,13 +110,13 @@ public final class PoiMappingRegistry implements MappingRegistry {
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
             Row row = sheet.getRow(i); if (row == null || rowBlank(row)) continue;
             String sourceId = cell(row, 0), object = cell(row, 1), rawClass = cell(row, 2), path = cell(row, 3), rawProperty = cell(row, 4);
+            if (rawProperty.isBlank()) continue;
             registerScope(scopes, sourceId, object);
             boolean rowValid = true;
-            if (sourceId.isBlank() || object.isBlank() || rawClass.isBlank() || path.isBlank() || rawProperty.isBlank()) {
+            if (sourceId.isBlank() || object.isBlank() || rawClass.isBlank() || path.isBlank()) {
                 issue(issues, sheet, i, sourceId, object, "属性映射", "属性映射缺少 sourceId/sourceObject/class/sourcePath/property", rawClass, rawProperty, path);
                 rowValid = false;
             }
-            if (sourceId.isBlank() && object.isBlank() && rawClass.isBlank() && path.isBlank() && rawProperty.isBlank()) continue;
             String classIri = MappingIriResolver.resolve(rawClass, schema.getClasses());
             String propertyIri = MappingIriResolver.resolve(rawProperty, schema.getDatatypeProperties());
             if (!schema.hasClass(classIri)) { issue(issues, sheet, i, sourceId, object, "属性映射", "属性映射引用未知实体类 " + rawClass, classIri, propertyIri, path); rowValid = false; }
@@ -132,15 +132,14 @@ public final class PoiMappingRegistry implements MappingRegistry {
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
             Row row = sheet.getRow(i); if (row == null || rowBlank(row)) continue;
             String sourceId = cell(row, 0), object = cell(row, 1), rawPredicate = cell(row, 2), rawSubject = cell(row, 3), rawObject = cell(row, 5);
+            if (rawPredicate.isBlank()) continue;
             registerScope(scopes, sourceId, object);
             boolean rowValid = true;
-            if (sourceId.isBlank() || object.isBlank() || rawPredicate.isBlank() || rawSubject.isBlank()
+            if (sourceId.isBlank() || object.isBlank() || rawSubject.isBlank()
                     || cell(row, 4).isBlank() || rawObject.isBlank() || cell(row, 6).isBlank()) {
                 issue(issues, sheet, i, sourceId, object, "关系映射", "关系映射缺少 sourceId/sourceObject/predicate/subjectClass/subjectLocator/objectClass/objectLocator", rawSubject, rawPredicate, cell(row, 4));
                 rowValid = false;
             }
-            if (sourceId.isBlank() && object.isBlank() && rawPredicate.isBlank() && rawSubject.isBlank()
-                    && cell(row, 4).isBlank() && rawObject.isBlank() && cell(row, 6).isBlank()) continue;
             String predicate = MappingIriResolver.resolve(rawPredicate, schema.getObjectProperties());
             String subject = MappingIriResolver.resolve(rawSubject, schema.getClasses());
             String objectClass = MappingIriResolver.resolve(rawObject, schema.getClasses());
@@ -185,6 +184,7 @@ public final class PoiMappingRegistry implements MappingRegistry {
         }
         Set<String> seen = new HashSet<>();
         for (int i = 1; i <= entities.getLastRowNum(); i++) { Row row = entities.getRow(i); if (row == null || rowBlank(row)) continue;
+            if (cell(row, 0).isBlank() || cell(row, 1).isBlank() || cell(row, 2).isBlank() || cell(row, 3).isBlank()) continue;
             String key = cell(row,0)+"|"+cell(row,1)+"|"+MappingIriResolver.resolve(cell(row,2), schema.getClasses());
             if (!seen.add(key)) issue(issues, entities, i, cell(row,0), cell(row,1), "实体映射", "实体映射重复："+key);
         }

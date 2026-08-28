@@ -80,21 +80,61 @@ class MappingInspectionTest {
     }
 
     @Test
-    void halfFilledPropertyAndRelationshipRowsProduceIssuesAndNoSpecs() throws Exception {
-        Path path = emptyWorkbook("half-filled.xlsx");
+    void inactiveRowsAreIgnored() throws Exception {
+        Path path = emptyWorkbook("inactive-rows.xlsx");
         try (XSSFWorkbook book = new XSSFWorkbook(Files.newInputStream(path));
              OutputStream output = Files.newOutputStream(path)) {
+            append(book.getSheet(MappingWorkbookFormat.ENTITY_SHEET),
+                    "inactive", "rows", "", "code-a");
+            append(book.getSheet(MappingWorkbookFormat.ENTITY_SHEET),
+                    "inactive", "rows", "", "code-b");
             append(book.getSheet(MappingWorkbookFormat.PROPERTY_SHEET),
-                    "bad", "half", "Airport", "code", "", "", "");
+                    "inactive", "rows", "Airport", "code", "", "", "");
             append(book.getSheet(MappingWorkbookFormat.RELATIONSHIP_SHEET),
-                    "bad", "half", "linkedTo", "Airport", "code", "Airport", "", "");
+                    "inactive", "rows", "", "Airport", "code", "Airport", "target", "");
             book.write(output);
         }
         var inspection = new PoiMappingRegistry().inspect(path, schema());
+        assertTrue(inspection.validCatalog().getEntities().isEmpty());
         assertTrue(inspection.validCatalog().getProperties().isEmpty());
         assertTrue(inspection.validCatalog().getRelationships().isEmpty());
-        assertTrue(inspection.report().issues().stream().anyMatch(issue -> issue.mappingKind().equals("属性映射")));
-        assertTrue(inspection.report().issues().stream().anyMatch(issue -> issue.mappingKind().equals("关系映射")));
+        assertTrue(inspection.report().issues().isEmpty());
+        assertEquals(MappingScopeStatus.UNMAPPED,
+                inspection.report().status(new MappingScope("inactive", "rows")));
+    }
+
+    @Test
+    void activeIncompleteRowsProduceIssues() throws Exception {
+        Path path = emptyWorkbook("active-incomplete-rows.xlsx");
+        try (XSSFWorkbook book = new XSSFWorkbook(Files.newInputStream(path));
+             OutputStream output = Files.newOutputStream(path)) {
+            append(book.getSheet(MappingWorkbookFormat.ENTITY_SHEET),
+                    "bad-entity", "airports", "Airport", "");
+            append(book.getSheet(MappingWorkbookFormat.PROPERTY_SHEET),
+                    "bad-property", "airports", "Airport", "", "airportCode", "", "");
+            append(book.getSheet(MappingWorkbookFormat.RELATIONSHIP_SHEET),
+                    "bad-relationship", "links", "linkedTo", "Airport", "code", "Airport", "", "");
+            book.write(output);
+        }
+        var inspection = new PoiMappingRegistry().inspect(path, schema());
+        assertTrue(inspection.validCatalog().getEntities().isEmpty());
+        assertTrue(inspection.validCatalog().getProperties().isEmpty());
+        assertTrue(inspection.validCatalog().getRelationships().isEmpty());
+        assertEquals(MappingScopeStatus.INVALID,
+                inspection.report().status(new MappingScope("bad-entity", "airports")));
+        assertEquals(MappingScopeStatus.INVALID,
+                inspection.report().status(new MappingScope("bad-property", "airports")));
+        assertEquals(MappingScopeStatus.INVALID,
+                inspection.report().status(new MappingScope("bad-relationship", "links")));
+        assertTrue(inspection.report().issues().stream()
+                .anyMatch(issue -> issue.mappingKind().equals("实体映射")
+                        && issue.message().contains("businessKey")));
+        assertTrue(inspection.report().issues().stream()
+                .anyMatch(issue -> issue.mappingKind().equals("属性映射")
+                        && issue.message().contains("sourcePath")));
+        assertTrue(inspection.report().issues().stream()
+                .anyMatch(issue -> issue.mappingKind().equals("关系映射")
+                        && issue.message().contains("objectLocator")));
     }
 
     @Test

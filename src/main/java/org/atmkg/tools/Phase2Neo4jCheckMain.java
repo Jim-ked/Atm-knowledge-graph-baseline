@@ -86,11 +86,22 @@ public final class Phase2Neo4jCheckMain {
             GraphDTO z001OneHop = query.query(new QuerySpec(QuerySpec.Type.NEIGHBORS, z001, null, 1, Set.of(), Set.of(), QuerySpec.Direction.BOTH, null, Map.of()));
             GraphDTO z002OneHop = query.query(new QuerySpec(QuerySpec.Type.NEIGHBORS, z002, null, 1, Set.of(), Set.of(), QuerySpec.Direction.BOTH, null, Map.of()));
             GraphDTO r001TwoHop = query.query(new QuerySpec(QuerySpec.Type.K_HOP, r001, null, 2, Set.of(), Set.of(), QuerySpec.Direction.BOTH, null, Map.of()));
-            GraphDTO r001Path = query.query(new QuerySpec(QuerySpec.Type.PATH, r001n001, r001n006, 5, Set.of(), Set.of(), QuerySpec.Direction.OUTGOING, null, Map.of()));
+            GraphDTO r001Structure = query.query(new QuerySpec(QuerySpec.Type.K_HOP, r001n001, null, 10,
+                    Set.of(), Set.of(NS + "fromNode", NS + "toNode"), QuerySpec.Direction.BOTH, null, Map.of()));
             require(z001OneHop.getNodes().size() >= 3, "Z001 一跳应包含机场及跑道");
             require(z002OneHop.getNodes().size() >= 3, "Z002 一跳应包含机场及跑道");
             require(r001TwoHop.getNodes().size() > 1 && r001TwoHop.getRelationships().size() > 0, "R001 两跳不应为空");
-            require(r001Path.getNodes().size() == 6 && r001Path.getRelationships().size() == 5, "R001 节点路径应为 6 节点/5 关系");
+            require(r001Structure.getNodes().stream().anyMatch(item -> r001n006.equals(item.getId())),
+                    "R001 结构应到达 R001:N006");
+            require(r001Structure.getNodes().size() == 11 && r001Structure.getRelationships().size() == 10,
+                    "R001 顺序结构应为 11 节点/10 关系");
+            require(r001Structure.getNodes().stream().filter(item -> "RouteNode".equals(item.getKind())).count() == 6,
+                    "R001 顺序结构应包含 6 个 RouteNode");
+            require(r001Structure.getNodes().stream().filter(item -> "RouteSegment".equals(item.getKind())).count() == 5,
+                    "R001 顺序结构应包含 5 个 RouteSegment");
+            require(r001Structure.getRelationships().stream()
+                            .filter(item -> "FROM_NODE".equals(item.getType()) || "TO_NODE".equals(item.getType())).count() == 10,
+                    "R001 顺序结构应包含 10 条 fromNode/toNode 关系");
 
             DefaultSyncService sync = new DefaultSyncService(Map.of("fixture", changed), mapping, store);
             for (var event : new FixtureChangeEventReader().read(root.resolve("fixtures/generated/small/changes.csv"))) sync.handle(event);
@@ -103,9 +114,9 @@ public final class Phase2Neo4jCheckMain {
             System.out.println("z002_one_hop_nodes=" + z002OneHop.getNodes().size());
             System.out.println("r001_two_hop_nodes=" + r001TwoHop.getNodes().size());
             System.out.println("r001_two_hop_relationships=" + r001TwoHop.getRelationships().size());
-            System.out.println("r001_path_nodes=" + r001Path.getNodes().size());
-            System.out.println("r001_path_relationships=" + r001Path.getRelationships().size());
-            System.out.println("crosses=SKIPPED_BY_ONTOLOGY_STATUS");
+            System.out.println("r001_structure_nodes=" + r001Structure.getNodes().size());
+            System.out.println("r001_structure_relationships=" + r001Structure.getRelationships().size());
+            System.out.println("crosses=NO_FIXTURE_INSTANCE");
         }
     }
 
