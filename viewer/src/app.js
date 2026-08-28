@@ -1,533 +1,73 @@
 import { ApiClient } from './core/api-client.js';
 import { GraphModel } from './core/graph-model.js';
+import { ResultState, renderRaw, renderTable } from './core/result-view.js';
+import { SchemaCatalog } from './core/schema-catalog.js';
 import { createScaleFixture } from './core/scale-fixtures.js';
 import { G6Adapter } from './adapters/g6-adapter.js';
 import { DEFAULT_G6_POC_CONFIG, normalizeG6PocConfig } from './adapters/g6-poc-config.js';
-import {
-  INTERACTION_ACTIONS,
-  VIEWER_CONFIG,
-  withLabelModes
-} from './config/viewer-config.js';
+import { INTERACTION_ACTIONS, VIEWER_CONFIG, withLabelModes, stableNodeColor } from './config/viewer-config.js';
 
-const isDebug = new URLSearchParams(window.location.search).get('debug') === 'true';
+const isDebug = new URLSearchParams(location.search).get('debug') === 'true';
 document.body.dataset.debug = String(isDebug);
-for (const element of document.querySelectorAll('[data-debug-only]')) element.hidden = !isDebug;
-
-const PRESETS = {
-  z001: {
-    label: 'Z001 一跳',
-    uid: 'urn:atm-knowledge-graph:entity:urn%3Aatm-knowledge-graph%3AAirport:Z001'
-  },
-  r001: {
-    label: 'R001 K=2',
-    uid: 'urn:atm-knowledge-graph:entity:urn%3Aatm-knowledge-graph%3ARoute:R001'
-  },
-  as0001: {
-    label: 'AS0001 K=2',
-    uid: 'urn:atm-knowledge-graph:entity:urn%3Aatm-knowledge-graph%3AAirspace:AS0001'
-  }
-};
-PRESETS.z001.run = api => api.oneHop(PRESETS.z001.uid);
-PRESETS.r001.run = api => api.kHop(PRESETS.r001.uid, 2);
-PRESETS.as0001.run = api => api.kHop(PRESETS.as0001.uid, 2);
-const PATH_PRESET = {
-  from: 'urn:atm-knowledge-graph:entity:urn%3Aatm-knowledge-graph%3ARouteNode:R001%3AN001',
-  to: 'urn:atm-knowledge-graph:entity:urn%3Aatm-knowledge-graph%3ARouteNode:R001%3AN006'
-};
-
-const elements = Object.fromEntries([
-  'status', 'graph', 'graph-summary', 'render-time', 'metrics', 'uid', 'depth',
-  'element-empty', 'node-empty', 'node-detail', 'node-caption', 'node-fields', 'node-properties',
-  'relationship-detail', 'relationship-type', 'relationship-fields', 'relationship-properties',
-  'path-from', 'path-to', 'path-depth', 'node-label-mode', 'edge-label-mode',
-  'cypher', 'cypher-form',
-  'entity-query', 'rebalance', 'clear', 'collapse', 'pin', 'unpin', 'hide-node',
-  'g6-poc-controls', 'g6-fixed', 'g6-link-distance', 'g6-link-strength',
-  'g6-many-body', 'g6-collide-strength', 'g6-collide-iterations', 'g6-center-strength', 'g6-poc-state',
-  'g6-unpin', 'g6-force-preset', 'g6-restart-preset', 'g6-restart', 'g6-visual-preset',
-  'g6-geometry-demo'
-].map(id => [id, document.getElementById(id)]));
+document.querySelectorAll('[data-debug-only]').forEach(el => { el.hidden = !isDebug; });
+const $ = id => document.getElementById(id);
 const api = new ApiClient();
 const model = new GraphModel({ schemaVersion: '1', nodes: [], relationships: [], meta: {} });
-const metrics = [];
-let adapter = null;
-let dataset = 'empty';
-let rendering = Promise.resolve();
-let apiRequests = 0;
-let g6PocConfig = { ...DEFAULT_G6_POC_CONFIG };
-let viewerConfig = structuredClone(VIEWER_CONFIG);
-let selectedRelationshipId = null;
-const expansionHistory = new Map();
+const resultState = new ResultState({ schemaVersion: '1', nodes: [], relationships: [], meta: {} });
+let catalog = new SchemaCatalog();
+let adapter = null, rendering = Promise.resolve(), dataset = 'empty', apiRequests = 0;
+let g6PocConfig = { ...DEFAULT_G6_POC_CONFIG }, viewerConfig = structuredClone(VIEWER_CONFIG);
+let selectedRelationshipId = null, activeView = 'graph';
+const expansionHistory = new Map(), metrics = [];
 
-function status(message, error = false) {
-  elements.status.textContent = message;
-  elements.status.classList.toggle('error', error);
-}
+const PRESETS = { z001: { label: 'Z001 一跳', uid: 'urn:atm-knowledge-graph:entity:urn%3Aatm-knowledge-graph%3AAirport:Z001' }, r001: { label: 'R001 K=2', uid: 'urn:atm-knowledge-graph:entity:urn%3Aatm-knowledge-graph%3ARoute:R001' }, as0001: { label: 'AS0001 K=2', uid: 'urn:atm-knowledge-graph:entity:urn%3Aatm-knowledge-graph%3AAirspace:AS0001' } };
+PRESETS.z001.run = api => api.oneHop(PRESETS.z001.uid); PRESETS.r001.run = api => api.kHop(PRESETS.r001.uid, 2); PRESETS.as0001.run = api => api.kHop(PRESETS.as0001.uid, 2);
+const PATH_PRESET = { from: 'urn:atm-knowledge-graph:entity:urn%3Aatm-knowledge-graph%3ARouteNode:R001%3AN001', to: 'urn:atm-knowledge-graph:entity:urn%3Aatm-knowledge-graph%3ARouteNode:R001%3AN006' };
 
-function modelReplace(graphDto) {
-  return model.replace(graphDto);
-}
+function status(text, error = false) { $('status').textContent = text; $('status').classList.toggle('error', error); }
+function fillSelect(select, options) { select.replaceChildren(new Option('全部', ''), ...options.map(o => new Option(o.label, o.value))); }
+async function loadSchema() { try { catalog = new SchemaCatalog(await api.schema()); const classes = catalog.classOptions(), rels = catalog.relationshipOptions(); ['entity-class','relation-class','path-from-class','path-to-class','filter-class'].forEach(id => fillSelect($(id), classes)); fillSelect($('relation-type'), rels); fillSelect($('filter-relationship'), rels); } catch { /* schema is optional for fixture/debug use */ } }
 
-function modelMerge(graphDto) {
-  return model.merge(graphDto);
-}
-
-function modelApplyPatch(patch) {
-  return model.applyPatch(patch);
-}
-
-function setGraph(graphDto, name) {
-  modelReplace(graphDto);
-  // A full query starts a fresh interaction workspace.
-  model.select(null);
-  model.highlightPath([]);
-  expansionHistory.clear();
-  selectedRelationshipId = null;
-  dataset = name;
-  return renderCurrent();
-}
-
-function renderCurrent() {
-  rendering = rendering.then(async () => {
-    const started = performance.now();
-    const previousAdapter = adapter;
-    if (previousAdapter) await previousAdapter.destroy();
-    adapter = new G6Adapter(elements.graph, selectNode, g6PocConfig, viewerConfig, {
-      onRelationshipSelect: selectRelationship,
-      onNodeAction: handleNodeAction,
-      onCollapse: collapseSelected
-    });
-    const snapshot = model.snapshot();
-    await adapter.render(snapshot);
-    const elapsed = Math.round((performance.now() - started) * 10) / 10;
-    metrics.push({ engine: 'g6', dataset, nodes: snapshot.nodes.length, relationships: snapshot.relationships.length, elapsed });
-    elements['graph-summary'].textContent = `${snapshot.nodes.length} nodes · ${snapshot.relationships.length} relationships`;
-    elements['render-time'].textContent = `render + layout ${elapsed} ms`;
-    renderMetrics();
-    renderDetail();
-    window.dispatchEvent(new CustomEvent('atmkg-render-complete', { detail: { engine: 'g6', dataset, elapsed } }));
-  }).catch(error => status(error.message, true));
-  return rendering;
-}
-
-function selectNode(nodeId) {
-  selectedRelationshipId = null;
-  model.select(nodeId);
-  renderDetail();
-  adapter.applySelection(nodeId).catch(error => status(error.message, true));
-}
-
-function selectRelationship(relationshipId) {
-  selectedRelationshipId = relationshipId;
-  model.select(null);
-  renderDetail();
-  adapter.applyRelationshipSelection(relationshipId).catch(error => status(error.message, true));
-}
-
+function modelReplace(graph) { model.replace(graph); }
+function renderLegend(graph) { const legend = $('legend'); const kinds = [...new Set(graph.nodes.map(n => n.kind ?? n.labels?.[0]).filter(Boolean))].sort(); legend.replaceChildren(...kinds.map(kind => { const item = document.createElement('div'); item.className = 'legend-item'; const dot = document.createElement('span'); dot.className = 'legend-dot'; dot.style.background = stableNodeColor({ kind }, viewerConfig.color); item.append(dot, document.createTextNode(catalog.classLabel(kind))); return item; })); legend.hidden = !kinds.length || activeView !== 'graph'; }
+function setDetailVisible(value) { $('detail-card').hidden = !value; }
+function fillDetails(container, values) { container.replaceChildren(...values.flatMap(([k,v]) => { const dt = document.createElement('dt'); dt.textContent = k; const dd = document.createElement('dd'); dd.textContent = String(v ?? ''); return [dt,dd]; })); }
 function renderDetail() {
-  const snapshot = model.snapshot();
-  const node = snapshot.nodes.find(candidate => candidate.id === snapshot.state.selectedNodeId);
-  const relationship = snapshot.relationships.find(candidate => candidate.id === selectedRelationshipId);
-  elements['element-empty'].hidden = Boolean(node || relationship);
-  elements['node-detail'].hidden = !node;
-  elements['relationship-detail'].hidden = !relationship;
-  if (node) {
-    elements['node-caption'].textContent = node.caption;
-    fillDetails(elements['node-fields'], [
-      ['ID', node.id], ['Kind', node.kind ?? ''], ['Labels', node.labels.join(', ')]
-    ]);
-    elements['node-properties'].textContent = JSON.stringify(node.properties, null, 2);
-    elements.collapse.disabled = !expansionHistory.has(node.id);
-  }
-  if (relationship) {
-    elements['relationship-type'].textContent = relationship.type;
-    fillDetails(elements['relationship-fields'], [
-      ['ID', relationship.id], ['Source', relationship.source], ['Target', relationship.target]
-    ]);
-    elements['relationship-properties'].textContent = JSON.stringify(relationship.properties, null, 2);
-  }
+ const snap = model.snapshot(), node = snap.nodes.find(n => n.id === snap.state.selectedNodeId), rel = snap.relationships.find(r => r.id === selectedRelationshipId);
+ if (!node && !rel) { setDetailVisible(false); return; } setDetailVisible(true); $('element-empty').hidden = Boolean(node || rel); $('node-detail').hidden = !node; $('relationship-detail').hidden = !rel;
+ if (node) { $('node-caption').textContent = node.caption ?? ''; $('node-class').textContent = catalog.classLabel(node.kind ?? node.labels?.[0] ?? ''); fillDetails($('node-fields'), Object.entries(node.properties ?? {}).sort((a,b) => a[0].localeCompare(b[0])).map(([k,v]) => [catalog.datatypePropertyLabel(k), typeof v === 'object' ? JSON.stringify(v) : v])); fillDetails($('node-tech'), [['UID', node.id], ['IRI', node.kind ?? node.labels?.[0] ?? ''], ['kind', node.kind ?? '']]); $('collapse').disabled = !expansionHistory.has(node.id); }
+ if (rel) { $('relationship-type').textContent = catalog.relationshipLabel(rel.type); const byId = new Map(snap.nodes.map(n => [n.id, n.caption ?? n.id])); fillDetails($('relationship-fields'), [['起点', byId.get(rel.source) ?? rel.source], ['终点', byId.get(rel.target) ?? rel.target], ...Object.entries(rel.properties ?? {}).sort((a,b) => a[0].localeCompare(b[0])).map(([k,v]) => [catalog.datatypePropertyLabel(k), typeof v === 'object' ? JSON.stringify(v) : v])]); fillDetails($('relationship-tech'), [['UID', rel.id], ['type', rel.type]]); }
 }
+function renderResultViews() { $('graph').hidden = activeView !== 'graph'; $('table-view').hidden = activeView !== 'table'; $('raw-view').hidden = activeView !== 'raw'; if (activeView === 'table') renderTable($('table-view'), resultState, catalog); if (activeView === 'raw') renderRaw($('raw-view'), resultState); renderLegend(resultState.filteredGraph()); document.querySelectorAll('[data-result-view]').forEach(b => b.classList.toggle('active', b.dataset.resultView === activeView)); }
+function setView(view) { activeView = view; renderResultViews(); }
 
-function fillDetails(container, values) {
-  container.replaceChildren();
-  for (const [name, value] of values) {
-    const term = document.createElement('dt'); term.textContent = name;
-    const description = document.createElement('dd'); description.textContent = value;
-    container.append(term, description);
-  }
-}
+function renderCurrent() { rendering = rendering.then(async () => { const start = performance.now(); if (adapter) await adapter.destroy(); adapter = new G6Adapter($('graph'), selectNode, g6PocConfig, viewerConfig, { onRelationshipSelect: selectRelationship, onNodeAction: handleNodeAction, relationshipLabel: type => catalog.relationshipLabel(type) }); const snap = model.snapshot(); await adapter.render(snap); const elapsed = Math.round((performance.now()-start)*10)/10; metrics.push({ engine:'g6', dataset, nodes:snap.nodes.length, relationships:snap.relationships.length, elapsed }); $('graph-summary').textContent = `${snap.nodes.length} nodes · ${snap.relationships.length} relationships`; $('render-time').textContent = `render + layout ${elapsed} ms`; renderResultViews(); renderDetail(); window.dispatchEvent(new CustomEvent('atmkg-render-complete',{detail:{engine:'g6',dataset,elapsed}})); }).catch(e => status(e.message,true)); return rendering; }
+function setGraph(graph, name, raw = graph) { resultState.set(raw); modelReplace(graph); model.select(null); model.highlightPath([]); expansionHistory.clear(); selectedRelationshipId = null; dataset = name; activeView = resultState.defaultView(); return renderCurrent(); }
+async function callApi(operation,label) { status(`正在查询 ${label}…`); apiRequests++; const result = await operation(); const graph = result?.nodes && result?.relationships ? result : result.graph; await setGraph(graph ?? { schemaVersion:'1',nodes:[],relationships:[],meta:{} }, label, result); status(`${label}：${graph?.nodes?.length ?? 0} nodes / ${graph?.relationships?.length ?? 0} relationships`); return result; }
+async function executeCypher(text) { return callApi(() => api.cypher(text), 'Cypher'); }
 
-function renderMetrics() {
-  elements.metrics.replaceChildren(...metrics.slice(-12).reverse().map(metric => {
-    const row = document.createElement('tr');
-    for (const value of [metric.engine, `${metric.dataset} (${metric.nodes}/${metric.relationships})`, metric.elapsed]) {
-      const cell = document.createElement('td'); cell.textContent = value; row.append(cell);
-    }
-    return row;
-  }));
-}
+function selectNode(id) { selectedRelationshipId = null; model.select(id); renderDetail(); adapter?.applySelection(id).catch(e=>status(e.message,true)); }
+function selectRelationship(id) { selectedRelationshipId = id; model.select(null); renderDetail(); adapter?.applyRelationshipSelection(id).catch(e=>status(e.message,true)); }
+async function lookupUnique(key, classIri) { apiRequests++; const graph = await api.lookup(key, classIri); if (!graph.nodes?.length) throw new Error('未找到指定实体'); if (graph.nodes.length > 1) throw new Error('找到多个同标识实体，请选择实体类型'); return graph.nodes[0]; }
+async function submitEntity(e) { e.preventDefault(); try { await callApi(() => api.lookup($('entity-key').value, $('entity-class').value), '实体查询'); } catch(err) { status(err.message,true); } }
+async function submitRelation(e) { e.preventDefault(); try { const node = await lookupUnique($('relation-key').value, $('relation-class').value); await callApi(() => api.neighborsFiltered(node.id, $('relation-type').value ? [$('relation-type').value] : []), '关系查询'); } catch(err) { status(err.message,true); } }
+async function submitPath(e) { e.preventDefault(); try { const from = await lookupUnique($('path-from-key').value, $('path-from-class').value), to = await lookupUnique($('path-to-key').value, $('path-to-class').value); apiRequests++; const path = await api.path(from.id,to.id,$('path-depth').value); resultState.set(path); modelReplace(path); model.highlightPath(path.relationships.map(r=>r.id)); dataset='路径查询'; activeView='graph'; await renderCurrent(); status(`路径已高亮：${path.nodes.length} nodes / ${path.relationships.length} relationships`); } catch(err) { status(err.message,true); } }
 
-async function callApi(operation, label) {
-  status(`正在查询 ${label}…`);
-  apiRequests += 1;
-  const graphDto = await operation();
-  await setGraph(graphDto, label);
-  status(`${label}：${graphDto.nodes.length} nodes / ${graphDto.relationships.length} relationships`);
-  return graphDto;
-}
+async function expandSelected(id=model.snapshot().state.selectedNodeId) { try { if(!id) throw new Error('请先选择节点'); status('正在展开所选节点的一跳…'); apiRequests++; const before=model.snapshot(), nodeIds=new Set(before.nodes.map(n=>n.id)), relIds=new Set(before.relationships.map(r=>r.id)); const expanded=await api.oneHop(id); model.merge(expanded); model.markExpanded(id); expansionHistory.set(id,{addedNodeIds:expanded.nodes.map(n=>n.id).filter(x=>!nodeIds.has(x)),addedRelationshipIds:expanded.relationships.map(r=>r.id).filter(x=>!relIds.has(x))}); dataset += '+expand'; const obs=await adapter.addGraphDto(expanded,id); resultState.graph = model.snapshot(); renderDetail(); renderResultViews(); $('graph-summary').textContent=`${model.snapshot().nodes.length} nodes · ${model.snapshot().relationships.length} relationships`; status(`G6 持久力场展开：+${obs.addedNodes} nodes / +${obs.addedEdges} relationships；旧节点平均位移 ${obs.meanOldDisplacement}px`); } catch(err){status(err.message,true);} }
+async function collapseSelected(id=model.snapshot().state.selectedNodeId) { try { const ex=expansionHistory.get(id); if(!id||!ex) throw new Error('当前节点没有可收起的本次展开'); model.applyPatch({removeNodeIds:ex.addedNodeIds,removeRelationshipIds:ex.addedRelationshipIds}); expansionHistory.delete(id); await adapter.removeToSnapshot(model.snapshot()); resultState.graph = model.snapshot(); renderDetail(); renderResultViews(); $('graph-summary').textContent=`${model.snapshot().nodes.length} nodes · ${model.snapshot().relationships.length} relationships`; status('已收起所选节点'); } catch(err){status(err.message,true);} }
+function handleNodeAction(id, action){ if(action!==INTERACTION_ACTIONS.EXPAND_OR_COLLAPSE)return; selectNode(id); (expansionHistory.has(id)?collapseSelected(id):expandSelected(id)).catch(e=>status(e.message,true)); }
 
-async function executeCypher(cypher) {
-  return callApi(() => api.cypher(cypher), 'Cypher');
-}
+document.querySelectorAll('[data-query-tab]').forEach(tab => tab.addEventListener('click',()=>{ document.querySelectorAll('[data-query-tab]').forEach(x=>x.classList.toggle('active',x===tab)); ['entity','relation','path'].forEach(k=>$(k+'-form').hidden=k!==tab.dataset.queryTab); }));
+$('cypher-form').addEventListener('submit',e=>{e.preventDefault();executeCypher($('cypher').value).catch(err=>status(err.message,true));}); $('cypher').addEventListener('keydown',e=>{if(e.ctrlKey&&e.key==='Enter'){$('cypher-form').requestSubmit();}}); $('entity-form').addEventListener('submit',submitEntity); $('relation-form').addEventListener('submit',submitRelation); $('path-form').addEventListener('submit',submitPath);
+document.querySelectorAll('[data-result-view]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.resultView))); $('fit').addEventListener('click',()=>adapter?.fit()); $('rebalance').addEventListener('click',()=>{adapter?.rebalance();status('已按当前拓扑重新平衡');}); $('clear').addEventListener('click',()=>setGraph({schemaVersion:'1',nodes:[],relationships:[],meta:{}},'empty').then(()=>status('画布已清空'))); $('filter-toggle').addEventListener('click',()=>{$('filter-popover').hidden=!$('filter-popover').hidden;});
+function applyFilter(){ resultState.filters={classIri:$('filter-class').value,relationshipType:$('filter-relationship').value}; modelReplace(resultState.filteredGraph()); renderCurrent(); }
+$('filter-class').addEventListener('change',applyFilter); $('filter-relationship').addEventListener('change',applyFilter); $('detail-close').addEventListener('click',()=>{model.select(null);selectedRelationshipId=null;setDetailVisible(false);adapter?.applySelection(null);}); $('expand').addEventListener('click',()=>expandSelected()); $('collapse').addEventListener('click',()=>collapseSelected()); $('pin').addEventListener('click',()=>adapter?.pin(model.snapshot().state.selectedNodeId)); $('unpin').addEventListener('click',()=>adapter?.unpin(model.snapshot().state.selectedNodeId)); $('hide-node').addEventListener('click',()=>adapter?.hide(model.snapshot().state.selectedNodeId));
 
-elements['cypher-form'].addEventListener('submit', event => {
-  event.preventDefault();
-  executeCypher(elements.cypher.value).catch(error => status(error.message, true));
-});
-elements.cypher.addEventListener('keydown', event => {
-  if (event.ctrlKey && event.key === 'Enter') {
-    event.preventDefault();
-    elements['cypher-form'].requestSubmit();
-  }
-});
-
-for (const button of document.querySelectorAll('[data-preset]')) {
-  button.addEventListener('click', () => {
-    const preset = PRESETS[button.dataset.preset];
-    elements.uid.value = preset.uid;
-    callApi(() => preset.run(api), preset.label).catch(error => status(error.message, true));
-  });
-}
-for (const button of document.querySelectorAll('[data-scale]')) {
-  button.addEventListener('click', () => {
-    const size = Number(button.dataset.scale);
-    setGraph(createScaleFixture(size), `scale-${size}`).then(() => status(`固定 GraphDTO：${size} nodes`));
-  });
-}
-elements['entity-query'].addEventListener('click', () => {
-  callApi(() => api.entity(elements.uid.value), '实体查询').catch(error => status(error.message, true));
-});
-document.getElementById('query-form').addEventListener('submit', event => {
-  event.preventDefault();
-  callApi(() => api.kHop(elements.uid.value, elements.depth.value), `K=${elements.depth.value}`)
-    .catch(error => status(error.message, true));
-});
-document.getElementById('fit').addEventListener('click', () => adapter?.fit());
-async function expandSelected(nodeId = model.snapshot().state.selectedNodeId) {
-  try {
-    const selected = nodeId;
-    if (!selected) throw new Error('请先选择节点');
-    if (model.snapshot().state.selectedNodeId !== selected) selectNode(selected);
-    status('正在展开所选节点的一跳…');
-    apiRequests += 1;
-    const before = model.snapshot();
-    const beforeNodeIds = new Set(before.nodes.map(node => node.id));
-    const beforeRelationshipIds = new Set(before.relationships.map(relationship => relationship.id));
-    const expanded = await api.oneHop(selected);
-    const addedNodeIds = expanded.nodes.map(node => node.id).filter(id => !beforeNodeIds.has(id));
-    const addedRelationshipIds = expanded.relationships.map(relationship => relationship.id)
-      .filter(id => !beforeRelationshipIds.has(id));
-    modelMerge(expanded);
-    model.markExpanded(selected);
-    if (addedNodeIds.length || addedRelationshipIds.length) {
-      expansionHistory.set(selected, { addedNodeIds, addedRelationshipIds });
-    }
-    dataset = `${dataset}+expand`;
-    const started = performance.now();
-    const observation = await adapter.addGraphDto(expanded, selected);
-    const elapsed = Math.round((performance.now() - started) * 10) / 10;
-    const snapshot = model.snapshot();
-    metrics.push({ engine: 'g6', dataset, nodes: snapshot.nodes.length, relationships: snapshot.relationships.length, elapsed });
-    elements['graph-summary'].textContent = `${snapshot.nodes.length} nodes · ${snapshot.relationships.length} relationships`;
-    elements['render-time'].textContent = `persistent addData + draw ${elapsed} ms`;
-    renderMetrics();
-    renderDetail();
-    status(`G6 持久力场展开：+${observation.addedNodes} nodes / +${observation.addedEdges} relationships；旧节点平均位移 ${observation.meanOldDisplacement}px`);
-  } catch (error) { status(error.message, true); }
-}
-document.getElementById('expand').addEventListener('click', () => expandSelected());
-
-async function collapseSelected(nodeId = model.snapshot().state.selectedNodeId) {
-  try {
-    const selected = nodeId;
-    const expansion = expansionHistory.get(selected);
-    if (!selected || !expansion) throw new Error('当前节点没有可收起的本次展开');
-    modelApplyPatch({
-      removeNodeIds: expansion.addedNodeIds,
-      removeRelationshipIds: expansion.addedRelationshipIds
-    });
-    expansionHistory.delete(selected);
-    const snapshot = model.snapshot();
-    await adapter.removeToSnapshot(snapshot);
-    renderDetail();
-    elements['graph-summary'].textContent = `${snapshot.nodes.length} nodes · ${snapshot.relationships.length} relationships`;
-    status(`已收起所选节点：-${expansion.addedNodeIds.length} nodes / -${expansion.addedRelationshipIds.length} relationships`);
-  } catch (error) { status(error.message, true); }
-}
-
-function handleNodeAction(nodeId, action) {
-  if (action !== INTERACTION_ACTIONS.EXPAND_OR_COLLAPSE) return;
-  selectNode(nodeId);
-  const operation = expansionHistory.has(nodeId) ? collapseSelected(nodeId) : expandSelected(nodeId);
-  operation.catch(error => status(error.message, true));
-}
-
-elements.collapse.addEventListener('click', () => collapseSelected());
-document.getElementById('path-form').addEventListener('submit', async event => {
-  event.preventDefault();
-  try {
-    apiRequests += 1;
-    const path = await api.path(elements['path-from'].value, elements['path-to'].value, elements['path-depth'].value);
-    modelReplace(path);
-    model.highlightPath(path.relationships.map(relationship => relationship.id));
-    dataset = 'R001-path';
-    await renderCurrent();
-    status(`路径已高亮：${path.nodes.length} nodes / ${path.relationships.length} relationships`);
-  } catch (error) { status(error.message, true); }
-});
-async function runIncremental() {
-  try {
-    const snapshot = model.snapshot();
-    if (snapshot.nodes.length === 0) throw new Error('请先加载一份 GraphDTO');
-    const anchor = snapshot.nodes[0].id;
-    const originalRelationship = snapshot.relationships[0];
-    const temp = 'viewer-fixture:temporary-node';
-    modelApplyPatch({
-      upsertNodes: [{ id: temp, labels: ['ViewerFixture'], kind: 'ViewerFixture', caption: '新增节点', properties: { phase: 'add' } }],
-      upsertRelationships: [{ id: 'viewer-fixture:temporary-edge', source: anchor, target: temp, type: 'VIEWER_FIXTURE_LINK', properties: {} }]
-    });
-    await renderCurrent();
-    modelApplyPatch({ upsertNodes: [{ id: temp, labels: ['ViewerFixture'], kind: 'ViewerFixture', caption: '已更新节点', properties: { phase: 'update' } }] });
-    await renderCurrent();
-    if (originalRelationship) {
-      modelApplyPatch({ removeRelationshipIds: [originalRelationship.id] });
-      await renderCurrent();
-      modelApplyPatch({ upsertRelationships: [originalRelationship] });
-      await renderCurrent();
-    }
-    modelApplyPatch({ removeNodeIds: [temp], removeRelationshipIds: ['viewer-fixture:temporary-edge'] });
-    await renderCurrent();
-    status('增量验证完成：add node/relationship、update node、remove old relationship、remove node');
-  } catch (error) { status(error.message, true); }
-}
-document.getElementById('incremental').addEventListener('click', runIncremental);
-
-async function setViewerLabelModes(nodeMode, edgeMode) {
-  viewerConfig = withLabelModes(viewerConfig, nodeMode, edgeMode);
-  elements['node-label-mode'].value = viewerConfig.node.labelMode;
-  elements['edge-label-mode'].value = viewerConfig.edge.labelMode;
-  await adapter.setLabelModes(viewerConfig.node.labelMode, viewerConfig.edge.labelMode);
-  return structuredClone(viewerConfig);
-}
-
-elements['node-label-mode'].addEventListener('change', () => {
-  setViewerLabelModes(elements['node-label-mode'].value, elements['edge-label-mode'].value)
-    .catch(error => status(error.message, true));
-});
-elements['edge-label-mode'].addEventListener('change', () => {
-  setViewerLabelModes(elements['node-label-mode'].value, elements['edge-label-mode'].value)
-    .catch(error => status(error.message, true));
-});
-elements.rebalance.addEventListener('click', () => {
-  adapter.rebalance();
-  status('已按当前拓扑重新平衡');
-});
-elements.clear.addEventListener('click', () => {
-  setGraph({ schemaVersion: '1', nodes: [], relationships: [], meta: {} }, 'empty')
-    .then(() => status('画布已清空'));
-});
-elements.pin.addEventListener('click', () => {
-  const selected = model.snapshot().state.selectedNodeId;
-  if (!(adapter instanceof G6Adapter) || !adapter.pin?.(selected)) {
-    status('请先选择一个节点', true);
-    return;
-  }
-  status('所选节点已固定');
-});
-elements.unpin.addEventListener('click', () => {
-  const selected = model.snapshot().state.selectedNodeId;
-  if (!(adapter instanceof G6Adapter) || !adapter.unpin?.(selected)) {
-    status('请先选择一个节点', true);
-    return;
-  }
-  status('已解除所选节点固定');
-});
-elements['hide-node'].addEventListener('click', async () => {
-  const selected = model.snapshot().state.selectedNodeId;
-  if (!(adapter instanceof G6Adapter) || !await adapter.hide(selected)) {
-    status('请先选择一个节点', true);
-    return;
-  }
-  status('所选节点及其画布关系已隐藏；重新查询可恢复');
-});
-
-elements['g6-fixed'].addEventListener('change', () => {
-  g6PocConfig = normalizeG6PocConfig({ ...g6PocConfig, fixed: elements['g6-fixed'].value === 'true' });
-  viewerConfig.interaction.dragEnd = g6PocConfig.fixed
-    ? INTERACTION_ACTIONS.PIN : INTERACTION_ACTIONS.RELEASE;
-  if (adapter instanceof G6Adapter) adapter.setFixed(g6PocConfig.fixed);
-  elements['g6-poc-state'].textContent = `d3-force · fixed=${g6PocConfig.fixed} · 直接拖动，无辅助键`;
-  status(`G6 持久力场拖动已切换为 fixed=${g6PocConfig.fixed}`);
-});
-elements['g6-visual-preset'].addEventListener('change', async () => {
-  if (!(adapter instanceof G6Adapter)) return;
-  try {
-    await adapter.setVisualPreset(elements['g6-visual-preset'].value);
-    g6PocConfig = { ...adapter.config };
-    viewerConfig = structuredClone(adapter.viewerConfig);
-    elements['g6-poc-state'].textContent = `${elements['g6-visual-preset'].selectedOptions[0].textContent} · visual node ${g6PocConfig.visualNodeSize}px · 物理参数未变`;
-    status(`视觉档位已切换为 ${elements['g6-visual-preset'].selectedOptions[0].textContent}；simulation 未重建`);
-  } catch (error) { status(error.message, true); }
-});
-elements['g6-geometry-demo'].addEventListener('click', async () => {
-  if (!(adapter instanceof G6Adapter)) return;
-  try {
-    const observation = await adapter.addGeometryDemo();
-    status(observation.addedEdges
-      ? '已添加临时平行边、反向边与 self-loop；仅存在于当前 G6 画布'
-      : '临时关系几何示例已存在');
-  } catch (error) { status(error.message, true); }
-});
-elements['g6-unpin'].addEventListener('click', () => {
-  const selected = model.snapshot().state.selectedNodeId;
-  if (!(adapter instanceof G6Adapter) || !selected) {
-    status('请先在 G6 中选择一个节点', true);
-    return;
-  }
-  adapter.unpin(selected);
-  status('已解除所选节点固定，并以 Gentle alpha=0.25 重新平衡');
-});
-elements['g6-force-preset'].addEventListener('change', () => {
-  if (adapter instanceof G6Adapter) {
-    adapter.setForcePreset(elements['g6-force-preset'].value);
-    status(`已选择 ${elements['g6-force-preset'].selectedOptions[0].textContent}，点击“应用并重新平衡”观察`);
-  }
-});
-elements['g6-restart-preset'].addEventListener('change', () => {
-  if (adapter instanceof G6Adapter) {
-    adapter.setRestartPreset(elements['g6-restart-preset'].value);
-    status(`重新加热档已切换为 ${elements['g6-restart-preset'].selectedOptions[0].textContent}`);
-  }
-});
-elements['g6-restart'].addEventListener('click', () => {
-  if (adapter instanceof G6Adapter) {
-    adapter.setForcePreset(elements['g6-force-preset'].value);
-    adapter.setRestartPreset(elements['g6-restart-preset'].value);
-    adapter.physics.restart(elements['g6-restart-preset'].value);
-    status(`${elements['g6-force-preset'].selectedOptions[0].textContent} · ${elements['g6-restart-preset'].selectedOptions[0].textContent}`);
-  }
-});
-elements['g6-poc-controls'].addEventListener('submit', event => {
-  event.preventDefault();
-  g6PocConfig = normalizeG6PocConfig({
-    ...g6PocConfig,
-    linkDistance: elements['g6-link-distance'].value,
-    linkStrength: elements['g6-link-strength'].value,
-    manyBodyStrength: elements['g6-many-body'].value,
-    collideStrength: elements['g6-collide-strength'].value,
-    collideIterations: elements['g6-collide-iterations'].value,
-    centerStrength: elements['g6-center-strength'].value
-  });
-  if (adapter instanceof G6Adapter) {
-    adapter.configureForces(g6PocConfig);
-    elements['g6-force-preset'].value = 'current';
-    status('G6 持久 d3-force 参数已应用；simulation 与旧节点对象未重建');
-  }
-});
-
-elements.uid.value = PRESETS.z001.uid;
-elements['path-from'].value = PATH_PRESET.from;
-elements['path-to'].value = PATH_PRESET.to;
-window.__ATMKG_PHASE5__ = {
-  model, metrics, PRESETS, PATH_PRESET,
-  get engine() { return 'g6'; },
-  get adapter() { return adapter; },
-  get apiRequests() { return apiRequests; },
-  get g6PocConfig() { return { ...g6PocConfig }; },
-  get rendering() { return rendering; },
-  executeCypher,
-  loadPreset: name => callApi(() => PRESETS[name].run(api), PRESETS[name].label),
-  loadScale: size => setGraph(createScaleFixture(size), `scale-${size}`),
-  loadPath: async () => {
-    apiRequests += 1;
-    const path = await api.path(PATH_PRESET.from, PATH_PRESET.to, 6);
-    modelReplace(path);
-    model.highlightPath(path.relationships.map(relationship => relationship.id));
-    dataset = 'R001-path';
-    await renderCurrent();
-    return path;
-  },
-  selectFirstViaEngine: async () => {
-    const first = model.snapshot().nodes[0]?.id;
-    if (!first) throw new Error('graph is empty');
-    adapter.graph.emit('node:click', { target: { id: first } });
-    await rendering;
-    return model.snapshot().state.selectedNodeId;
-  },
-  selectNodeByKind: async kind => {
-    const node = model.snapshot().nodes.find(candidate => candidate.kind === kind || candidate.labels.includes(kind));
-    if (!node) throw new Error(`node kind not found: ${kind}`);
-    selectNode(node.id);
-    await adapter.applySelection(node.id);
-    return node.id;
-  },
-  firstNodeViewport: () => {
-    const first = model.snapshot().nodes[0]?.id;
-    if (!first) return null;
-    const [x, y] = adapter.graph.getViewportByCanvas(adapter.graph.getElementPosition(first));
-    return { x, y };
-  },
-  firstNodePosition: () => {
-    const first = model.snapshot().nodes[0]?.id;
-    if (!first) return null;
-    const [x, y] = adapter.graph.getElementPosition(first);
-    return { x, y };
-  },
-  dragFirstForValidation: async () => {
-    const first = model.snapshot().nodes[0]?.id;
-    if (!first) throw new Error('graph is empty');
-    await adapter.graph.translateElementBy(first, [40, 30], false);
-  },
-  expandSelected,
-  collapseSelected,
-  setViewerLabelModes,
-  runIncremental,
-  setG6Fixed: fixed => {
-    elements['g6-fixed'].value = String(Boolean(fixed));
-    elements['g6-fixed'].dispatchEvent(new Event('change'));
-  },
-  setG6VisualPreset: async preset => {
-    elements['g6-visual-preset'].value = preset;
-    if (!(adapter instanceof G6Adapter)) throw new Error('G6 adapter is not active');
-    await adapter.setVisualPreset(preset);
-    g6PocConfig = { ...adapter.config };
-    viewerConfig = structuredClone(adapter.viewerConfig);
-    return adapter.diagnostics().config;
-  },
-  addG6GeometryDemo: () => {
-    if (!(adapter instanceof G6Adapter)) throw new Error('G6 adapter is not active');
-    return adapter.addGeometryDemo();
-  },
-  setG6RestartPreset: preset => {
-    elements['g6-restart-preset'].value = preset;
-    elements['g6-restart-preset'].dispatchEvent(new Event('change'));
-  },
-  setG6ForcePreset: preset => {
-    elements['g6-force-preset'].value = preset;
-    elements['g6-force-preset'].dispatchEvent(new Event('change'));
-  },
-  restartG6: preset => {
-    if (!(adapter instanceof G6Adapter)) throw new Error('G6 adapter is not active');
-    adapter.setRestartPreset(preset);
-    return adapter.physics.restart(preset);
-  },
-  unpinSelected: () => {
-    if (!(adapter instanceof G6Adapter)) throw new Error('G6 adapter is not active');
-    return adapter.unpin(model.snapshot().state.selectedNodeId);
-  },
-  pinSelected: () => {
-    if (!(adapter instanceof G6Adapter)) throw new Error('G6 adapter is not active');
-    return adapter.pin(model.snapshot().state.selectedNodeId);
-  }
-};
-renderCurrent();
+document.querySelectorAll('[data-preset]').forEach(b=>b.addEventListener('click',()=>callApi(()=>PRESETS[b.dataset.preset].run(api),PRESETS[b.dataset.preset].label).catch(e=>status(e.message,true)))); document.querySelectorAll('[data-scale]').forEach(b=>b.addEventListener('click',()=>setGraph(createScaleFixture(Number(b.dataset.scale)),`scale-${b.dataset.scale}`)));
+async function setViewerLabelModes(node,edge){ viewerConfig=withLabelModes(viewerConfig,node,edge); if(adapter) await adapter.setLabelModes(node,edge); return structuredClone(viewerConfig); }
+for (const id of ['node-label-mode','edge-label-mode']) $(id).addEventListener('change', () => setViewerLabelModes($('node-label-mode').value, $('edge-label-mode').value));
+async function runIncremental(){ const snap=model.snapshot(); if(!snap.nodes.length) throw new Error('请先加载一份 GraphDTO'); const anchor=snap.nodes[0].id,temp='viewer-fixture:temporary-node'; model.applyPatch({upsertNodes:[{id:temp,labels:['ViewerFixture'],kind:'ViewerFixture',caption:'新增节点',properties:{phase:'add'}}],upsertRelationships:[{id:'viewer-fixture:temporary-edge',source:anchor,target:temp,type:'VIEWER_FIXTURE_LINK',properties:{}}]}); await renderCurrent(); model.applyPatch({upsertNodes:[{id:temp,labels:['ViewerFixture'],kind:'ViewerFixture',caption:'已更新节点',properties:{phase:'update'}}]}); await renderCurrent(); model.applyPatch({removeNodeIds:[temp],removeRelationshipIds:['viewer-fixture:temporary-edge']}); await renderCurrent(); status('增量验证完成'); }
+// Debug controls retain the previously validated G6 workbench.
+$('g6-fixed').addEventListener('change',()=>{g6PocConfig=normalizeG6PocConfig({...g6PocConfig,fixed:$('g6-fixed').value==='true'});adapter?.setFixed(g6PocConfig.fixed);}); $('g6-visual-preset').addEventListener('change',async()=>{if(adapter){await adapter.setVisualPreset($('g6-visual-preset').value);g6PocConfig={...adapter.config};viewerConfig=structuredClone(adapter.viewerConfig);}}); $('g6-geometry-demo').addEventListener('click',()=>adapter?.addGeometryDemo()); $('g6-unpin').addEventListener('click',()=>adapter?.unpin(model.snapshot().state.selectedNodeId)); $('g6-force-preset').addEventListener('change',()=>adapter?.setForcePreset($('g6-force-preset').value)); $('g6-restart-preset').addEventListener('change',()=>adapter?.setRestartPreset($('g6-restart-preset').value)); $('g6-restart').addEventListener('click',()=>adapter?.physics.restart($('g6-restart-preset').value)); $('g6-poc-controls').addEventListener('submit',e=>{e.preventDefault();adapter?.configureForces(g6PocConfig);});
+window.__ATMKG_PHASE5__={model,metrics,PRESETS,PATH_PRESET,get engine(){return'g6'},get adapter(){return adapter},get apiRequests(){return apiRequests},get rendering(){return rendering},executeCypher,loadPreset:name=>callApi(()=>PRESETS[name].run(api),PRESETS[name].label),loadScale:size=>setGraph(createScaleFixture(size),`scale-${size}`),loadPath:async()=>{apiRequests++;const p=await api.path(PATH_PRESET.from,PATH_PRESET.to,6);resultState.set(p);modelReplace(p);model.highlightPath(p.relationships.map(r=>r.id));dataset='R001-path';await renderCurrent();return p;},selectFirstViaEngine:async()=>{const id=model.snapshot().nodes[0]?.id;if(!id)throw Error('graph is empty');adapter.graph.emit('node:click',{target:{id}});await rendering;return model.snapshot().state.selectedNodeId;},selectNodeByKind:async kind=>{const n=model.snapshot().nodes.find(x=>x.kind===kind||x.labels.includes(kind));if(!n)throw Error(`node kind not found: ${kind}`);selectNode(n.id);return n.id;},firstNodeViewport:()=>{const id=model.snapshot().nodes[0]?.id;if(!id)return null;const [x,y]=adapter.graph.getViewportByCanvas(adapter.graph.getElementPosition(id));return{x,y};},firstNodePosition:()=>{const id=model.snapshot().nodes[0]?.id;if(!id)return null;const [x,y]=adapter.graph.getElementPosition(id);return{x,y};},dragFirstForValidation:async()=>{const id=model.snapshot().nodes[0]?.id;await adapter.graph.translateElementBy(id,[40,30],false);},expandSelected,collapseSelected,setViewerLabelModes,runIncremental,setG6Fixed:fixed=>{$('g6-fixed').value=String(Boolean(fixed));$('g6-fixed').dispatchEvent(new Event('change'));},setG6VisualPreset:async p=>{ $('g6-visual-preset').value=p;await adapter.setVisualPreset(p);return adapter.diagnostics().config;},addG6GeometryDemo:()=>adapter.addGeometryDemo(),setG6RestartPreset:p=>{$('g6-restart-preset').value=p;$('g6-restart-preset').dispatchEvent(new Event('change'));},setG6ForcePreset:p=>{$('g6-force-preset').value=p;$('g6-force-preset').dispatchEvent(new Event('change'));},restartG6:p=>adapter.physics.restart(p),unpinSelected:()=>adapter.unpin(model.snapshot().state.selectedNodeId),pinSelected:()=>adapter.pin(model.snapshot().state.selectedNodeId)};
+loadSchema(); renderCurrent();

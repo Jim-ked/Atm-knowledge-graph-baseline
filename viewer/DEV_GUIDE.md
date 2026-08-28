@@ -2,7 +2,7 @@
 
 正式入口：`/viewer/`。开发调试入口：`/viewer/?debug=true`。
 
-正式页面顶部提供轻量只读 Cypher 输入框（Ctrl+Enter 执行）。请求体只有 `cypher`，结果直接进入现有 GraphModel/G6；不提供历史、收藏、补全、结果表格或节点数量下拉框。节点规模由 Cypher 自己的 `LIMIT` 控制，服务端仍会对超限结果显式失败。
+正式页面顶部提供轻量只读 Cypher 输入框（Ctrl+Enter 执行）和实体、关系、路径快捷查询。结果统一进入 Result Panel，可在图谱、表格、原始 JSON 间切换；切换不重复请求。节点规模由 Cypher 自己的 `LIMIT` 控制，服务端仍会对超限结果显式失败。
 
 ## 我想修改什么 → 去哪里改
 
@@ -21,6 +21,8 @@
 | 关系平行边、双向边、self-loop 几何 | `src/adapters/g6-visual-geometry.js` 与 `g6-poc-config.js` transforms |
 | 正常 / Debug 页面显隐 | `index.html` 的 `data-debug-only`，判断逻辑在 `src/app.js` 的 `isDebug` |
 | 正式页面结构与样式 | `index.html`、`src/styles.css` |
+| Schema 标签目录与选项 | `src/core/schema-catalog.js` |
+| 结果状态、表格与原始视图 | `src/core/result-view.js` |
 
 ## 标签模式
 

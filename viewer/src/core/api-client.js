@@ -6,6 +6,25 @@ export class ApiClient {
   }
 
   entity(uid) { return this.#get(`/entities/${encodeURIComponent(this.#text(uid, 'uid'))}`); }
+  schema() { return this.#get('/schema'); }
+  lookup(key, classIri = '') {
+    const body = { key: this.#text(key, 'key') };
+    const klass = String(classIri ?? '').trim();
+    if (klass) body.classIri = klass;
+    return this.#post('/entities/lookup', body);
+  }
+  graphQuery({ type, startUid, targetUid, depth, relationshipTypes = [], classFilters = [], direction = 'BOTH' }) {
+    const body = { type: this.#text(type, 'type'), startUid: this.#text(startUid, 'startUid'), direction };
+    if (targetUid != null && String(targetUid).trim()) body.targetUid = this.#text(targetUid, 'targetUid');
+    if (depth != null) body.depth = this.#depth(depth);
+    if (relationshipTypes?.length) body.relationshipTypes = relationshipTypes;
+    if (classFilters?.length) body.classFilters = classFilters;
+    return this.#post('/graph/query', body);
+  }
+  neighborsFiltered(uid, relationshipTypes = []) {
+    return this.graphQuery({ type: 'NEIGHBORS', startUid: uid, relationshipTypes, direction: 'BOTH' });
+  }
+  named(queryId, startUid) { return this.#post('/graph/named', { queryId: this.#text(queryId, 'queryId'), startUid: this.#text(startUid, 'startUid') }); }
   oneHop(uid) { return this.#post('/graph/one-hop', { uid: this.#text(uid, 'uid') }); }
   kHop(uid, depth) {
     return this.#post('/graph/k-hop', { uid: this.#text(uid, 'uid'), depth: this.#depth(depth) });

@@ -464,7 +464,7 @@ export class G6Adapter extends ViewerAdapter {
         endArrowLineWidth: 0.6,
         loopType: G6_EDGE_GEOMETRY.loopType,
         labelText: datum.data.viewerLabelText
-          ?? resolveEdgeLabel(edgeConfig.labelMode, datum.data.type, automaticCaption),
+          ?? resolveEdgeLabel(edgeConfig.labelMode, this.callbacks.relationshipLabel?.(datum.data.type) ?? datum.data.type, automaticCaption),
         labelPlacement: 'center',
         labelAutoRotate: G6_EDGE_GEOMETRY.labelAutoRotate,
         labelIsBillboard: G6_EDGE_GEOMETRY.labelIsBillboard,
@@ -576,7 +576,7 @@ export class G6Adapter extends ViewerAdapter {
       edge.data.type, this.#edgeLength(edge), this.viewerConfig.edge.fontSize
     );
     const labelText = resolveEdgeLabel(
-      this.viewerConfig.edge.labelMode, edge.data.type, automaticCaption,
+      this.viewerConfig.edge.labelMode, this.callbacks.relationshipLabel?.(edge.data.type) ?? edge.data.type, automaticCaption,
       { active: states.includes('hover') || states.includes('selected'),
         related: states.includes('related'), path: states.includes('highlighted') }
     );

@@ -1,146 +1,19 @@
 <!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>航管知识图谱</title>
-  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./styles.css">
-</head>
-<body data-debug="false">
-  <header class="topbar">
-    <h1>航管知识图谱</h1>
-  </header>
-
-  <main>
-    <section class="controls" aria-label="图查询">
-      <form id="cypher-form" class="cypher-query" aria-label="只读 Cypher 查询">
-        <label for="cypher">Cypher</label>
-        <textarea id="cypher" rows="3"
-          placeholder="MATCH (n:KGEntity {kg_project: 'atm-knowledge-graph'}) RETURN n LIMIT 20"></textarea>
-        <button type="submit">执行 Cypher</button>
-      </form>
-      <p class="query-hint">不会写 Cypher？可使用 tools\review.cmd 生成查询语句。Ctrl+Enter 执行。</p>
-      <form id="query-form" class="control-group query-group">
-        <label>实体 UID <input id="uid" size="34" autocomplete="off"></label>
-        <button id="entity-query" type="button">查询实体</button>
-        <label>深度 <input id="depth" type="number" min="1" max="8" value="2"></label>
-        <button type="submit">查询 K-hop</button>
-      </form>
-      <details class="path-query">
-        <summary>路径查询</summary>
-        <form id="path-form" class="control-group">
-          <label>路径起点 UID <input id="path-from" size="22" autocomplete="off"></label>
-          <label>终点 UID <input id="path-to" size="22" autocomplete="off"></label>
-          <label>最大深度 <input id="path-depth" type="number" min="1" max="8" value="6"></label>
-          <button type="submit">查询路径</button>
-        </form>
-      </details>
-      <div id="api-presets" class="control-group debug-block" data-debug-only hidden>
-        <span class="group-label">真实 API 快捷场景</span>
-        <button data-preset="z001">Z001 一跳</button>
-        <button data-preset="r001">R001 · K=2</button>
-        <button data-preset="as0001">AS0001 · K=2</button>
-      </div>
-      <div id="scale-controls" class="control-group debug-block" data-debug-only hidden>
-        <span class="group-label">固定 GraphDTO</span>
-        <button data-scale="100">100</button><button data-scale="500">500</button>
-        <button data-scale="1000">1000</button><button data-scale="1500">1500</button>
-      </div>
-      <div id="status" class="status" role="status" aria-live="polite">准备就绪</div>
-    </section>
-
-    <section class="workspace">
-      <div class="viewer-panel">
-        <div class="viewer-toolbar">
-          <div class="display-controls" aria-label="显示方式">
-            <label>节点标签
-              <select id="node-label-mode">
-                <option value="AUTO" selected>自动</option><option value="INSIDE">节点内</option>
-                <option value="OUTSIDE">节点外</option><option value="HIDDEN">隐藏</option>
-              </select>
-            </label>
-            <label>关系标签
-              <select id="edge-label-mode">
-                <option value="AUTO" selected>自动</option><option value="VISIBLE">显示</option>
-                <option value="HIDDEN">隐藏</option>
-              </select>
-            </label>
-          </div>
-          <div class="graph-actions">
-            <button id="fit">适应画布</button><button id="rebalance">重新平衡</button>
-            <button id="clear">清空</button>
-          </div>
-        </div>
-        <details id="debug-panel" class="debug-panel debug-block" data-debug-only hidden open>
-          <summary>Debug Panel · G6 验证</summary>
-        <form id="g6-poc-controls" class="g6-poc-controls" aria-label="G6 Debug Workbench"
-              data-debug-only hidden>
-          <strong>G6 Debug Workbench</strong>
-          <button id="incremental" type="button">增量 add/update/remove</button>
-          <label>视觉档位
-            <select id="g6-visual-preset"><option value="light">轻量</option>
-              <option value="balanced" selected>均衡</option><option value="readable">易读</option></select>
-          </label>
-          <label>拖后固定
-            <select id="g6-fixed"><option value="true">fixed=true</option><option value="false">fixed=false</option></select>
-          </label>
-          <button id="g6-unpin" type="button">解除固定</button>
-          <button id="g6-geometry-demo" type="button">临时关系几何示例</button>
-          <label>力参数参考
-            <select id="g6-force-preset"><option value="current">当前参数</option>
-              <option value="browser-reference">Browser 参考</option></select>
-          </label>
-          <label>重新加热
-            <select id="g6-restart-preset"><option value="browser-like">Browser-like · alpha=1</option>
-              <option value="gentle">Gentle · alpha=0.25</option></select>
-          </label>
-          <button id="g6-restart" type="button">应用并重新平衡</button>
-          <details><summary>实验力参数</summary>
-            <div class="force-fields">
-              <label>连线距离 <input id="g6-link-distance" type="number" min="40" max="240" value="100"></label>
-              <label>连线强度 <input id="g6-link-strength" type="number" min="0" max="1" step="0.05" value="0.55"></label>
-              <label>斥力 <input id="g6-many-body" type="number" min="-1500" max="-30" step="10" value="-160"></label>
-              <label>碰撞强度 <input id="g6-collide-strength" type="number" min="0" max="1" step="0.05" value="0.95"></label>
-              <label>碰撞迭代 <input id="g6-collide-iterations" type="number" min="1" max="6" value="3"></label>
-              <label>中心力 <input id="g6-center-strength" type="number" min="0" max="1" step="0.01" value="0.08"></label>
-              <button type="submit">应用并重新平衡</button>
-            </div>
-          </details>
-          <span id="g6-poc-state" class="muted">均衡 · visual node 40px</span>
-        </form>
-        </details>
-        <div id="graph" class="graph" aria-label="知识图谱画布"></div>
-        <div class="graph-footer"><span id="graph-summary">0 nodes · 0 relationships</span>
-          <span id="render-time" data-debug-only hidden>render —</span></div>
-      </div>
-
-      <aside class="details" aria-label="图元素详情">
-        <section>
-          <h2>详情</h2>
-          <div id="element-empty" class="muted">点击节点或关系查看完整属性</div>
-          <div id="node-empty" hidden></div>
-          <div id="node-detail" hidden>
-            <p class="detail-type">节点</p><h3 id="node-caption"></h3><dl id="node-fields"></dl>
-            <pre id="node-properties"></pre>
-            <div class="node-actions" aria-label="节点操作">
-              <button id="expand">展开一跳</button><button id="collapse">收起</button>
-              <button id="pin">固定</button><button id="unpin">解除固定</button>
-              <button id="hide-node">隐藏</button>
-            </div>
-          </div>
-          <div id="relationship-detail" hidden>
-            <p class="detail-type">关系</p><h3 id="relationship-type"></h3>
-            <dl id="relationship-fields"></dl><pre id="relationship-properties"></pre>
-          </div>
-        </section>
-        <section id="session-metrics" data-debug-only hidden>
-          <h2>G6 Debug 会话</h2>
-          <table><thead><tr><th>渲染器</th><th>数据</th><th>渲染 ms</th></tr></thead><tbody id="metrics"></tbody></table>
-        </section>
-      </aside>
-    </section>
-  </main>
-  <script type="module" src="./app.js"></script>
-</body>
-</html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>航管知识图谱</title><link rel="icon" href="./favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="./styles.css"></head>
+<body data-debug="false"><header class="topbar"><h1>航管知识图谱</h1></header><main>
+<section class="query-bar" aria-label="查询入口">
+ <form id="cypher-form" class="cypher-line"><label for="cypher">Cypher</label><textarea id="cypher" rows="1" placeholder="MATCH (n) RETURN n LIMIT 20"></textarea><button type="submit">执行</button></form>
+ <div class="quick-line"><span class="quick-title">快捷查询</span><div class="quick-tabs" role="tablist"><button type="button" data-query-tab="entity" class="active">实体</button><button type="button" data-query-tab="relation">关系</button><button type="button" data-query-tab="path">路径</button></div>
+  <form id="entity-form" class="quick-form"><label>标识 <input id="entity-key" autocomplete="off" required></label><label>类型 <select id="entity-class"><option value="">全部</option></select></label><button type="submit">查询</button></form>
+  <form id="relation-form" class="quick-form" hidden><label>实体 <input id="relation-key" autocomplete="off" required></label><label>类型 <select id="relation-class"><option value="">全部</option></select></label><label>关系 <select id="relation-type"><option value="">全部</option></select></label><button type="submit">查询</button></form>
+  <form id="path-form" class="quick-form" hidden><label>起点 <input id="path-from-key" autocomplete="off" required></label><label>类型 <select id="path-from-class"><option value="">全部</option></select></label><label>终点 <input id="path-to-key" autocomplete="off" required></label><label>类型 <select id="path-to-class"><option value="">全部</option></select></label><label>深度 <input id="path-depth" type="number" min="1" max="8" value="6"></label><button type="submit">查询</button></form>
+ </div><div id="status" class="status" role="status" aria-live="polite">准备就绪</div>
+</section>
+<section class="result-panel" aria-label="查询结果"><div class="result-toolbar"><div class="view-tabs"><button type="button" data-result-view="graph" class="active">图谱</button><button type="button" data-result-view="table">表格</button><button type="button" data-result-view="raw">原始</button></div><button id="filter-toggle" type="button">筛选</button><button id="fit" type="button">适应画布</button><button id="rebalance" type="button">重新平衡</button><button id="clear" type="button">清空</button></div>
+ <div id="filter-popover" class="filter-popover" hidden><label>实体类型 <select id="filter-class"><option value="">全部</option></select></label><label>关系类型 <select id="filter-relationship"><option value="">全部</option></select></label></div>
+ <div id="result-content" class="result-content"><div id="graph" class="graph" aria-label="知识图谱画布"></div><div id="table-view" class="table-view" hidden></div><div id="raw-view" class="raw-view" hidden></div><div id="legend" class="legend" hidden></div><div id="detail-card" class="detail-card" hidden><button id="detail-close" class="detail-close" type="button" aria-label="关闭详情">×</button><div id="element-empty" class="muted">点击节点或关系查看详情</div><div id="node-detail" hidden><p class="detail-type">实体</p><h2 id="node-caption"></h2><p id="node-class" class="detail-class"></p><dl id="node-fields"></dl><details><summary>技术信息</summary><dl id="node-tech"></dl></details><div class="node-actions"><button id="expand" type="button">展开一跳</button><button id="collapse" type="button">收起</button><button id="pin" type="button">固定</button><button id="unpin" type="button">解除固定</button><button id="hide-node" type="button">隐藏</button></div></div><div id="relationship-detail" hidden><p class="detail-type">关系</p><h2 id="relationship-type"></h2><dl id="relationship-fields"></dl><details><summary>技术信息</summary><dl id="relationship-tech"></dl></details></div></div></div>
+ <div class="graph-footer"><span id="graph-summary">0 nodes · 0 relationships</span><span id="render-time" data-debug-only hidden>render —</span></div>
+</section>
+<details id="debug-panel" class="debug-panel" data-debug-only hidden><summary>Debug Panel · G6 验证</summary><div class="debug-grid"><div id="api-presets"><button data-preset="z001">Z001 一跳</button><button data-preset="r001">R001 · K=2</button><button data-preset="as0001">AS0001 · K=2</button></div><div id="scale-controls"><button data-scale="100">100</button><button data-scale="500">500</button><button data-scale="1000">1000</button></div><form id="g6-poc-controls"><button id="incremental" type="button">增量</button><label>视觉 <select id="g6-visual-preset"><option value="light">轻量</option><option value="balanced" selected>均衡</option><option value="readable">易读</option></select></label><label>拖后固定 <select id="g6-fixed"><option value="true">true</option><option value="false">false</option></select></label><button id="g6-unpin" type="button">解除固定</button><button id="g6-geometry-demo" type="button">几何示例</button><label>力 <select id="g6-force-preset"><option value="current">当前</option><option value="browser-reference">Browser</option></select></label><label>重新加热 <select id="g6-restart-preset"><option value="browser-like">Browser-like</option><option value="gentle">Gentle</option></select></label><button id="g6-restart" type="button">应用</button><details><summary>实验力参数</summary><div class="force-fields"><label>距离 <input id="g6-link-distance" type="number" value="100"></label><label>强度 <input id="g6-link-strength" type="number" value="0.55"></label><label>斥力 <input id="g6-many-body" type="number" value="-160"></label><label>碰撞 <input id="g6-collide-strength" type="number" value="0.95"></label><label>迭代 <input id="g6-collide-iterations" type="number" value="3"></label><label>中心 <input id="g6-center-strength" type="number" value="0.08"></label><button type="submit">应用</button></div></details><span id="g6-poc-state">d3-force</span></form></div></details>
+<div class="debug-label-modes" data-debug-only hidden><label>节点标签 <select id="node-label-mode"><option value="AUTO">自动</option><option value="INSIDE">节点内</option><option value="OUTSIDE">节点外</option><option value="HIDDEN">隐藏</option></select></label><label>关系标签 <select id="edge-label-mode"><option value="AUTO">自动</option><option value="VISIBLE">显示</option><option value="HIDDEN">隐藏</option></select></label></div><section id="session-metrics" data-debug-only hidden><table><tbody id="metrics"></tbody></table></section>
+</main><script type="module" src="./app.js"></script></body></html>

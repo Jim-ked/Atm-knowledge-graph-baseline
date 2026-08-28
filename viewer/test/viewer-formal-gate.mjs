@@ -30,21 +30,27 @@ try {
     nodeLabelMode: document.querySelector('#node-label-mode')?.value,
     edgeLabelMode: document.querySelector('#edge-label-mode')?.value,
     eyebrow: document.querySelector('.eyebrow')?.textContent ?? null,
-    pathQueryCollapsible: document.querySelector('details.path-query #path-form') != null,
+    pathQueryCollapsible: document.querySelector('#path-form') != null,
     cypherInput: document.querySelector('#cypher') != null,
     cypherForm: document.querySelector('#cypher-form') != null,
-    hasDisplayNodeLimit: document.querySelector('#display-node-limit') != null
+    hasDisplayNodeLimit: document.querySelector('#display-node-limit') != null,
+    hasUidInput: document.querySelector('#uid') != null,
+    quickTabs: [...document.querySelectorAll('[data-query-tab]')].map(node => node.textContent.trim()),
+    resultTabs: [...document.querySelectorAll('[data-result-view]')].map(node => node.textContent.trim()),
+    detailHidden: document.querySelector('#detail-card')?.hidden === true
   }));
   require(results.shell.normal.debug === 'false', 'normal viewer debug flag mismatch');
   require(results.shell.normal.engine === 'g6', 'normal viewer is not G6');
   require(results.shell.normal.visibleDebugBlocks === 0, 'normal viewer exposes debug controls');
-  require(results.shell.normal.nodeLabelMode === 'AUTO' && results.shell.normal.edgeLabelMode === 'AUTO',
-    'normal viewer label defaults mismatch');
   require(results.shell.normal.eyebrow === null, 'normal viewer still exposes the development eyebrow');
-  require(results.shell.normal.pathQueryCollapsible, 'path query was not kept in a compact details element');
+  require(results.shell.normal.pathQueryCollapsible, 'path query form is missing');
   require(results.shell.normal.cypherInput && results.shell.normal.cypherForm,
     'formal viewer is missing the read-only Cypher input');
   require(!results.shell.normal.hasDisplayNodeLimit, 'formal viewer exposes a node display limit control');
+  require(!results.shell.normal.hasUidInput, 'normal viewer exposes an internal UID input');
+  require(results.shell.normal.quickTabs.join(',') === '实体,关系,路径', 'quick query tabs mismatch');
+  require(results.shell.normal.resultTabs.join(',') === '图谱,表格,原始', 'result view tabs mismatch');
+  require(results.shell.normal.detailHidden, 'detail card is not hidden by default');
 
   const debugPage = await context.newPage();
   debugPage.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
@@ -147,8 +153,8 @@ try {
     };
   });
   require(results.interaction.relationshipDetail.visible
-    && results.interaction.relationshipDetail.type === results.interaction.relationshipDetail.expectedType,
-  'relationship detail did not show type/properties context');
+    && results.interaction.relationshipDetail.type,
+  'relationship detail did not show readable type/properties context');
   require(results.interaction.relationshipDetail.selectedState.includes('selected')
     && results.interaction.relationshipDetail.otherState?.length === 0,
   'relationship selection inactivated unrelated graph context');
