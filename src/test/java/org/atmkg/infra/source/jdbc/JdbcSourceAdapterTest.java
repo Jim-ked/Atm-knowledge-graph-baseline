@@ -19,6 +19,7 @@ import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -61,6 +62,8 @@ class JdbcSourceAdapterTest {
         DRIVER.executions.clear();
         DRIVER.rejectSetReadOnly = false;
         DRIVER.watermarkJdbcType = Types.TIMESTAMP;
+        DRIVER.connectionCloseCount = 0;
+        DRIVER.statementCloseCount = 0;
     }
 
     @Test
@@ -104,6 +107,110 @@ class JdbcSourceAdapterTest {
         assertVendorNeutral(execution.sql());
         assertEquals("reader", execution.properties().getProperty("user"));
         assertEquals("secret", execution.properties().getProperty("password"));
+    }
+
+    @Test
+    void rowReadAllRemainsLazyStreamingAndClosesResourcesAtExhaustion() throws Exception {
+        JdbcSourceAdapter adapter = adapter("""
+                objects:
+                  route-row:
+                    table: route_rows
+                    keyFields: [route_id, sequence_no]
+                """);
+
+        Iterable<SourceRecord> records = adapter.readAll("route-row");
+        assertTrue(DRIVER.executions.isEmpty());
+
+        Iterator<SourceRecord> iterator = records.iterator();
+        assertEquals(1, DRIVER.executions.size());
+        assertEquals(0, DRIVER.connectionCloseCount);
+        iterator.next();
+        assertEquals(0, DRIVER.connectionCloseCount);
+        iterator.next();
+        assertFalse(iterator.hasNext());
+        assertEquals(1, DRIVER.statementCloseCount);
+        assertEquals(1, DRIVER.connectionCloseCount);
+    }
+
+    @Test
+    void groupFirstFullReadUsesSharedCompositionRules() throws Exception {
+        JdbcSourceAdapter adapter = adapter("""
+                objects:
+                  route-first:
+                    table: compose_rows
+                    keyFields: [route_id, sequence_no]
+                    recordMode: group_first
+                    groupBy: [route_id]
+                    orderBy: sequence_no
+                """);
+
+        List<SourceRecord> records = list(adapter.readAll("route-first"));
+
+        assertEquals(List.of("R1|1", "R2|1"),
+                records.stream().map(SourceRecord::getSourceKey).toList());
+        assertEquals("p1", records.get(0).getFields().get("MixedCaseCaption"));
+    }
+
+    @Test
+    void adjacentNextFullReadCreatesCurrentAndNextLogicalRows() throws Exception {
+        JdbcSourceAdapter adapter = adapter("""
+                objects:
+                  route-adjacent:
+                    table: compose_rows
+                    keyFields: [route_id, sequence_no]
+                    recordMode: adjacent_next
+                    groupBy: [route_id]
+                    orderBy: sequence_no
+                """);
+
+        List<SourceRecord> records = list(adapter.readAll("route-adjacent"));
+
+        assertEquals(List.of("R1|1", "R1|2"),
+                records.stream().map(SourceRecord::getSourceKey).toList());
+        assertEquals("p1", records.get(0).getFields().get("MixedCaseCaption"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> next = (Map<String, Object>) records.get(0).getFields().get("next");
+        assertEquals("p2", next.get("MixedCaseCaption"));
+        assertEquals("R1|2", next.get("__sourceKey"));
+    }
+
+    @Test
+    void nonRowReadByKeyMatchesComposedLogicalRecord() throws Exception {
+        JdbcSourceAdapter adapter = adapter("""
+                objects:
+                  route-adjacent:
+                    table: compose_rows
+                    keyFields: [route_id, sequence_no]
+                    recordMode: adjacent_next
+                    groupBy: [route_id]
+                    orderBy: sequence_no
+                """);
+
+        SourceRecord record = adapter.readByKey("route-adjacent", "R1|1").orElseThrow();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> next = (Map<String, Object>) record.getFields().get("next");
+        assertEquals("p2", next.get("MixedCaseCaption"));
+        assertEquals("SELECT * FROM compose_rows ORDER BY route_id, sequence_no",
+                DRIVER.executions.get(0).sql());
+    }
+
+    @Test
+    void nonRowWithWatermarkIsRejectedDuringAdapterInitialization() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> adapter("""
+                objects:
+                  route-adjacent:
+                    table: compose_rows
+                    keyFields: [route_id, sequence_no]
+                    recordMode: adjacent_next
+                    groupBy: [route_id]
+                    orderBy: sequence_no
+                    watermarkField: modified_at
+                """));
+
+        assertTrue(error.getMessage().contains(
+                "JDBC 非 row 组合模式当前不支持 watermark 增量，请使用 row 模式或去除 watermarkField 后执行 full sync。"));
+        assertTrue(DRIVER.executions.isEmpty());
     }
 
     @Test
@@ -163,6 +270,17 @@ class JdbcSourceAdapterTest {
                 """));
         assertTrue(unsafe.getMessage().contains("table"));
 
+        IllegalArgumentException unsafeGroup = assertThrows(IllegalArgumentException.class, () -> adapter("""
+                objects:
+                  route-row:
+                    table: route_rows
+                    keyFields: [route_id]
+                    recordMode: adjacent_next
+                    groupBy: [route_id;drop]
+                    orderBy: sequence_no
+                """));
+        assertTrue(unsafeGroup.getMessage().contains("groupBy"));
+
         JdbcSourceAdapter withoutWatermark = adapter("""
                 objects:
                   route-row:
@@ -220,6 +338,8 @@ class JdbcSourceAdapterTest {
         private final List<Execution> executions = new ArrayList<>();
         private boolean rejectSetReadOnly;
         private int watermarkJdbcType = Types.TIMESTAMP;
+        private int connectionCloseCount;
+        private int statementCloseCount;
 
         @Override
         public Connection connect(String url, Properties info) {
@@ -244,7 +364,10 @@ class JdbcSourceAdapterTest {
                             if (rejectSetReadOnly) throw new SQLException("setReadOnly is not supported");
                             yield null;
                         }
-                        case "close" -> null;
+                        case "close" -> {
+                            connectionCloseCount++;
+                            yield null;
+                        }
                         case "isClosed" -> false;
                         default -> defaultValue(method.getReturnType());
                     });
@@ -265,7 +388,11 @@ class JdbcSourceAdapterTest {
                                 executions.add(new Execution(sql, ordered, copy(properties)));
                                 yield rows(sql, ordered);
                             }
-                            case "close", "setFetchSize", "setMaxRows" -> null;
+                            case "close" -> {
+                                statementCloseCount++;
+                                yield null;
+                            }
+                            case "setFetchSize", "setMaxRows" -> null;
                             case "isClosed" -> false;
                             default -> defaultValue(method.getReturnType());
                         };
@@ -273,9 +400,15 @@ class JdbcSourceAdapterTest {
         }
 
         private CachedRowSet rows(String sql, List<Object> parameters) throws SQLException {
-            List<List<Object>> data = List.of(
-                    List.of("R|1", 2, "alpha", watermarkValue(FIRST_CHANGED)),
-                    List.of("R\\2", 3, "bravo", watermarkValue(SECOND_CHANGED)));
+            List<List<Object>> data = sql.contains("compose_rows")
+                    ? List.of(
+                            List.of("R1", 2, "p2", watermarkValue(FIRST_CHANGED)),
+                            List.of("R1", 1, "p1", watermarkValue(FIRST_CHANGED)),
+                            List.of("R1", 3, "p3", watermarkValue(SECOND_CHANGED)),
+                            List.of("R2", 1, "q1", watermarkValue(FIRST_CHANGED)))
+                    : List.of(
+                            List.of("R|1", 2, "alpha", watermarkValue(FIRST_CHANGED)),
+                            List.of("R\\2", 3, "bravo", watermarkValue(SECOND_CHANGED)));
             if (sql.contains("route_id = ?")) {
                 data = data.stream().filter(row -> row.get(0).equals(parameters.get(0))
                         && String.valueOf(row.get(1)).equals(parameters.get(1))).toList();

@@ -3,7 +3,6 @@ package org.atmkg.infra.source.excel;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.io.IOException;
 import java.io.InputStream;
-import java.math.BigDecimal;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -25,6 +24,9 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.atmkg.core.model.SourceRecord;
 import org.atmkg.core.spi.SourceAdapter;
+import org.atmkg.infra.source.compose.RawRecord;
+import org.atmkg.infra.source.compose.RecordComposer;
+import org.atmkg.infra.source.compose.RecordCompositionSpec;
 import org.atmkg.infra.source.config.ConfiguredSource;
 
 /**
@@ -38,12 +40,12 @@ import org.atmkg.infra.source.config.ConfiguredSource;
  */
 public final class ExcelSourceAdapter implements SourceAdapter {
     private static final String ADAPTER = "excel";
-    private static final String SYNTHETIC_SOURCE_KEY = "__sourceKey";
 
     private final String sourceId;
     private final Path rootDirectory;
     private final Map<String, ObjectSpec> objects;
     private final DataFormatter formatter = new DataFormatter();
+    private final RecordComposer composer = new RecordComposer();
 
     public ExcelSourceAdapter(ConfiguredSource source, Path projectRoot) {
         if (source == null) throw new IllegalArgumentException("source 不能为空");
@@ -102,100 +104,17 @@ public final class ExcelSourceAdapter implements SourceAdapter {
     private List<SourceRecord> readFile(Path file, String objectName, ObjectSpec spec) {
         try (InputStream input = Files.newInputStream(file); Workbook workbook = new XSSFWorkbook(input)) {
             Sheet sheet = selectSheet(workbook, spec, file);
-            List<RowData> rows = readRows(file, sheet, spec);
             Instant timestamp = Files.getLastModifiedTime(file).toInstant();
-            if (spec.mode == RecordMode.ROW) return ordinaryRecords(objectName, rows, spec, timestamp);
-            if (spec.mode == RecordMode.GROUP_FIRST) return groupFirstRecords(objectName, rows, spec, timestamp, file, sheet.getSheetName());
-            return adjacentRecords(objectName, rows, spec, timestamp, file, sheet.getSheetName());
+            List<RawRecord> rows = readRows(file, sheet, spec, timestamp);
+            List<SourceRecord> out = new ArrayList<>();
+            composer.compose(sourceId, objectName, rows, spec.composition).forEach(out::add);
+            return out;
         } catch (IOException ex) {
             throw new IllegalStateException("Excel 读取失败：" + file, ex);
         }
     }
 
-    private List<SourceRecord> ordinaryRecords(String objectName, List<RowData> rows, ObjectSpec spec, Instant timestamp) {
-        List<SourceRecord> out = new ArrayList<>();
-        for (RowData row : rows) {
-            String key = sourceKey(row.fields, spec.keyFields, row.location());
-            Map<String, Object> fields = new LinkedHashMap<>(row.fields);
-            fields.put(SYNTHETIC_SOURCE_KEY, key);
-            out.add(new SourceRecord(sourceId, objectName, key, fields, timestamp));
-        }
-        return out;
-    }
-
-    private List<SourceRecord> groupFirstRecords(String objectName, List<RowData> rows, ObjectSpec spec,
-                                                Instant timestamp, Path file, String sheetName) {
-        Map<String, List<RowData>> groups = new LinkedHashMap<>();
-        for (RowData row : rows) {
-            String group = sourceKey(row.fields, spec.groupBy, row.location());
-            groups.computeIfAbsent(group, ignored -> new ArrayList<>()).add(row);
-        }
-        List<SourceRecord> out = new ArrayList<>();
-        for (Map.Entry<String, List<RowData>> entry : groups.entrySet()) {
-            List<RowData> groupRows = entry.getValue();
-            groupRows.sort((left, right) -> compareOrder(left, right, spec.orderBy));
-            if (groupRows.size() > 1 && compareOrder(groupRows.get(0), groupRows.get(1), spec.orderBy) == 0) {
-                throw new IllegalStateException("GROUP_FIRST 无法唯一确定组内首行："
-                        + file + " / " + sheetName + " / group=" + entry.getKey()
-                        + " / " + spec.orderBy + "=" + value(groupRows.get(0).fields, spec.orderBy));
-            }
-            RowData first = groupRows.get(0);
-            String key = sourceKey(first.fields, spec.keyFields, first.location());
-            Map<String, Object> fields = new LinkedHashMap<>(first.fields);
-            fields.put(SYNTHETIC_SOURCE_KEY, key);
-            out.add(new SourceRecord(sourceId, objectName, key, fields, timestamp));
-        }
-        return out;
-    }
-
-    private List<SourceRecord> adjacentRecords(String objectName, List<RowData> rows, ObjectSpec spec,
-                                               Instant timestamp, Path file, String sheetName) {
-        Map<String, List<RowData>> groups = new LinkedHashMap<>();
-        for (RowData row : rows) {
-            String group = spec.groupBy.isEmpty() ? "__all__" : sourceKey(row.fields, spec.groupBy, row.location());
-            groups.computeIfAbsent(group, ignored -> new ArrayList<>()).add(row);
-        }
-        List<SourceRecord> out = new ArrayList<>();
-        for (Map.Entry<String, List<RowData>> entry : groups.entrySet()) {
-            List<RowData> groupRows = entry.getValue();
-            groupRows.sort((left, right) -> compareOrder(left, right, spec.orderBy));
-            for (int i = 1; i < groupRows.size(); i++) {
-                if (compareOrder(groupRows.get(i - 1), groupRows.get(i), spec.orderBy) == 0) {
-                    throw new IllegalStateException("ADJACENT_NEXT 排序字段重复，无法唯一确定相邻顺序："
-                            + file + " / " + sheetName + " / group=" + entry.getKey()
-                            + " / " + spec.orderBy + "=" + value(groupRows.get(i).fields, spec.orderBy));
-                }
-            }
-            for (int i = 0; i + 1 < groupRows.size(); i++) {
-                RowData current = groupRows.get(i);
-                RowData next = groupRows.get(i + 1);
-                String key = sourceKey(current.fields, spec.keyFields, current.location());
-                Map<String, Object> currentFields = new LinkedHashMap<>(current.fields);
-                currentFields.put(SYNTHETIC_SOURCE_KEY, sourceKey(current.fields, spec.keyFields, current.location()));
-                Map<String, Object> nextFields = new LinkedHashMap<>(next.fields);
-                nextFields.put(SYNTHETIC_SOURCE_KEY, sourceKey(next.fields, spec.keyFields, next.location()));
-
-                Map<String, Object> fields = new LinkedHashMap<>(current.fields);
-                fields.put("current", currentFields);
-                fields.put("next", nextFields);
-                fields.put(SYNTHETIC_SOURCE_KEY, key);
-                out.add(new SourceRecord(sourceId, objectName, key, fields, timestamp));
-            }
-        }
-        return out;
-    }
-
-    private int compareOrder(RowData left, RowData right, String field) {
-        String a = stringValue(value(left.fields, field));
-        String b = stringValue(value(right.fields, field));
-        try {
-            return new BigDecimal(a).compareTo(new BigDecimal(b));
-        } catch (NumberFormatException ignored) {
-            return a.compareTo(b);
-        }
-    }
-
-    private List<RowData> readRows(Path file, Sheet sheet, ObjectSpec spec) {
+    private List<RawRecord> readRows(Path file, Sheet sheet, ObjectSpec spec, Instant timestamp) {
         int headerIndex = spec.headerRow - 1;
         Row headerRow = sheet.getRow(headerIndex);
         if (headerRow == null) throw new IllegalStateException("Excel 缺少表头：" + file + " / " + sheet.getSheetName());
@@ -212,7 +131,7 @@ public final class ExcelSourceAdapter implements SourceAdapter {
             headers.add(name);
         }
 
-        List<RowData> out = new ArrayList<>();
+        List<RawRecord> out = new ArrayList<>();
         for (int index = headerIndex + 1; index <= sheet.getLastRowNum(); index++) {
             Row row = sheet.getRow(index);
             if (row == null) continue;
@@ -223,7 +142,8 @@ public final class ExcelSourceAdapter implements SourceAdapter {
                 if (!text.isBlank()) any = true;
                 fields.put(headers.get(column), text);
             }
-            if (any) out.add(new RowData(fields, file, sheet.getSheetName(), index + 1));
+            if (any) out.add(new RawRecord(fields, timestamp,
+                    file + " / " + sheet.getSheetName() + " / row=" + (index + 1)));
         }
         return out;
     }
@@ -280,38 +200,9 @@ public final class ExcelSourceAdapter implements SourceAdapter {
         return Map.copyOf(out);
     }
 
-    private String sourceKey(Map<String, Object> fields, List<String> keyFields, String location) {
-        List<String> values = new ArrayList<>();
-        for (String field : keyFields) {
-            String text = stringValue(value(fields, field));
-            if (text.isBlank()) throw new IllegalStateException("sourceKey 字段为空：" + field + " @ " + location);
-            values.add(escapeKey(text));
-        }
-        return String.join("|", values);
-    }
-
-    @SuppressWarnings("unchecked")
-    private Object value(Map<String, Object> fields, String path) {
-        Object current = fields;
-        for (String part : path.split("\\.")) {
-            if (!(current instanceof Map<?, ?> map)) return null;
-            current = ((Map<String, Object>) map).get(part);
-            if (current == null) return null;
-        }
-        return current;
-    }
-
     private String cell(Row row, int column) {
         Cell cell = row.getCell(column, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
         return cell == null ? "" : formatter.formatCellValue(cell).trim();
-    }
-
-    private static String escapeKey(String value) {
-        return value.replace("\\", "\\\\").replace("|", "\\|");
-    }
-
-    private static String stringValue(Object value) {
-        return value == null ? "" : String.valueOf(value).trim();
     }
 
     private static String optionalText(JsonNode node, String field, String fallback) {
@@ -321,28 +212,20 @@ public final class ExcelSourceAdapter implements SourceAdapter {
         return value.textValue().trim();
     }
 
-    private enum RecordMode { ROW, GROUP_FIRST, ADJACENT_NEXT }
-
     private static final class ObjectSpec {
         private final String filesPattern;
         private final String sheetName;
         private final int sheetIndex;
         private final int headerRow;
-        private final RecordMode mode;
-        private final List<String> keyFields;
-        private final List<String> groupBy;
-        private final String orderBy;
+        private final RecordCompositionSpec composition;
 
-        private ObjectSpec(String filesPattern, String sheetName, int sheetIndex, int headerRow, RecordMode mode,
-                           List<String> keyFields, List<String> groupBy, String orderBy) {
+        private ObjectSpec(String filesPattern, String sheetName, int sheetIndex, int headerRow,
+                           RecordCompositionSpec composition) {
             this.filesPattern = filesPattern;
             this.sheetName = sheetName;
             this.sheetIndex = sheetIndex;
             this.headerRow = headerRow;
-            this.mode = mode;
-            this.keyFields = keyFields;
-            this.groupBy = groupBy;
-            this.orderBy = orderBy;
+            this.composition = composition;
         }
 
         private static ObjectSpec parse(String objectName, JsonNode node) {
@@ -357,23 +240,18 @@ public final class ExcelSourceAdapter implements SourceAdapter {
             else throw new IllegalArgumentException(objectName + ".sheet 必须是 Sheet 名称或从 1 开始的序号");
 
             int headerRow = optionalPositiveInt(node, "headerRow", 1, objectName);
-            String modeText = optionalText(node, "recordMode", "row").replace('-', '_').toUpperCase();
-            RecordMode mode;
-            try {
-                mode = RecordMode.valueOf(modeText);
-            } catch (IllegalArgumentException ex) {
-                throw new IllegalArgumentException(objectName + ".recordMode 仅支持 row / group_first / adjacent_next", ex);
-            }
+            String modeText = optionalText(node, "recordMode", "row");
             List<String> keyFields = requiredStringList(node, "keyFields", objectName);
             List<String> groupBy = optionalStringList(node, "groupBy", objectName);
             String orderBy = optionalText(node, "orderBy", "");
-            if (mode == RecordMode.GROUP_FIRST && groupBy.isEmpty()) {
-                throw new IllegalArgumentException(objectName + " 使用 group_first 时必须配置 groupBy");
+            RecordCompositionSpec composition;
+            try {
+                composition = new RecordCompositionSpec(RecordCompositionSpec.parseMode(modeText),
+                        keyFields, groupBy, orderBy);
+            } catch (IllegalArgumentException ex) {
+                throw new IllegalArgumentException(objectName + "." + ex.getMessage(), ex);
             }
-            if ((mode == RecordMode.GROUP_FIRST || mode == RecordMode.ADJACENT_NEXT) && orderBy.isBlank()) {
-                throw new IllegalArgumentException(objectName + " 使用 " + modeText.toLowerCase() + " 时必须配置 orderBy");
-            }
-            return new ObjectSpec(files, sheetName, sheetIndex, headerRow, mode, keyFields, groupBy, orderBy);
+            return new ObjectSpec(files, sheetName, sheetIndex, headerRow, composition);
         }
 
         private static String requiredText(JsonNode node, String field, String objectName) {
@@ -414,7 +292,4 @@ public final class ExcelSourceAdapter implements SourceAdapter {
         }
     }
 
-    private record RowData(Map<String, Object> fields, Path file, String sheet, int rowNumber) {
-        private String location() { return file + " / " + sheet + " / row=" + rowNumber; }
-    }
 }

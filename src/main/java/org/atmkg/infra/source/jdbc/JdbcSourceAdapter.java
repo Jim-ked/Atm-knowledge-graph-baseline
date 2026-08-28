@@ -23,6 +23,10 @@ import java.util.Set;
 import java.util.regex.Pattern;
 import org.atmkg.core.model.SourceRecord;
 import org.atmkg.core.spi.SourceAdapter;
+import org.atmkg.infra.source.compose.RawRecord;
+import org.atmkg.infra.source.compose.RecordComposer;
+import org.atmkg.infra.source.compose.RecordCompositionSpec;
+import org.atmkg.infra.source.compose.RecordCompositionSpec.RecordMode;
 import org.atmkg.infra.source.config.ConfiguredSource;
 
 /**
@@ -36,7 +40,6 @@ import org.atmkg.infra.source.config.ConfiguredSource;
  */
 public final class JdbcSourceAdapter implements SourceAdapter {
     private static final String ADAPTER = "jdbc";
-    private static final String SYNTHETIC_SOURCE_KEY = "__sourceKey";
     private static final Pattern QUALIFIED_IDENTIFIER = Pattern.compile(
             "[\\p{L}_][\\p{L}\\p{N}_$]*(?:\\.[\\p{L}_][\\p{L}\\p{N}_$]*)*");
     private static final Pattern COLUMN_IDENTIFIER = Pattern.compile("[\\p{L}_][\\p{L}\\p{N}_$]*");
@@ -47,6 +50,7 @@ public final class JdbcSourceAdapter implements SourceAdapter {
     private final String password;
     private final int fetchSize;
     private final Map<String, ObjectSpec> objects;
+    private final RecordComposer composer = new RecordComposer();
 
     public JdbcSourceAdapter(ConfiguredSource source) {
         this(source, System.getenv());
@@ -72,22 +76,31 @@ public final class JdbcSourceAdapter implements SourceAdapter {
     public Iterable<SourceRecord> readAll(String objectName) {
         ObjectSpec spec = requireObject(objectName);
         String sql = "SELECT * FROM " + spec.relation + orderBy(spec);
-        return records(objectName, spec, sql, statement -> {}, 0, true);
+        if (spec.composition.recordMode() == RecordMode.ROW) {
+            return rowRecords(objectName, spec, sql, statement -> {}, 0, true);
+        }
+        return composedRecords(objectName, spec, sql, statement -> {}, 0);
     }
 
     @Override
     public Optional<SourceRecord> readByKey(String objectName, String sourceKey) {
         if (sourceKey == null || sourceKey.isBlank()) throw new IllegalArgumentException("sourceKey 不能为空");
         ObjectSpec spec = requireObject(objectName);
+        if (spec.composition.recordMode() != RecordMode.ROW) {
+            for (SourceRecord record : readAll(objectName)) {
+                if (record.getSourceKey().equals(sourceKey)) return Optional.of(record);
+            }
+            return Optional.empty();
+        }
         List<String> values = decodeSourceKey(sourceKey, spec.keyFields.size());
         StringBuilder sql = new StringBuilder("SELECT * FROM ").append(spec.relation).append(" WHERE ");
         for (int i = 0; i < spec.keyFields.size(); i++) {
             if (i > 0) sql.append(" AND ");
             sql.append(spec.keyFields.get(i)).append(" = ?");
         }
-        JdbcIterator iterator = query(objectName, spec, sql.toString(), statement -> {
+        Iterator<SourceRecord> iterator = rowRecords(objectName, spec, sql.toString(), statement -> {
             for (int i = 0; i < values.size(); i++) statement.setString(i + 1, values.get(i));
-        }, 2, false);
+        }, 2, false).iterator();
         try {
             if (!iterator.hasNext()) return Optional.empty();
             SourceRecord record = iterator.next();
@@ -99,7 +112,7 @@ public final class JdbcSourceAdapter implements SourceAdapter {
             }
             return Optional.of(record);
         } finally {
-            iterator.close();
+            closeIterator(iterator);
         }
     }
 
@@ -107,21 +120,42 @@ public final class JdbcSourceAdapter implements SourceAdapter {
     public Iterable<SourceRecord> scanChangedSince(String objectName, Instant since) {
         if (since == null) throw new IllegalArgumentException("since 不能为空");
         ObjectSpec spec = requireObject(objectName);
+        if (spec.composition.recordMode() != RecordMode.ROW) {
+            throw new IllegalStateException("JDBC 非 row 组合模式当前不支持 scanChangedSince");
+        }
         if (spec.watermarkField == null) {
             throw new IllegalStateException(objectName + " 未配置 watermarkField，不能执行 scanChangedSince");
         }
         String sql = "SELECT * FROM " + spec.relation + " WHERE " + spec.watermarkField + " > ?" + orderBy(spec);
-        return records(objectName, spec, sql,
+        return rowRecords(objectName, spec, sql,
                 statement -> statement.setTimestamp(1, Timestamp.from(since)), 0, true);
     }
 
-    private Iterable<SourceRecord> records(String objectName, ObjectSpec spec, String sql,
-                                           StatementBinder binder, int maxRows, boolean rejectDuplicates) {
-        return () -> query(objectName, spec, sql, binder, maxRows, rejectDuplicates);
+    private Iterable<SourceRecord> rowRecords(String objectName, ObjectSpec spec, String sql,
+                                              StatementBinder binder, int maxRows, boolean rejectDuplicates) {
+        Iterable<RawRecord> raw = () -> query(objectName, spec, sql, binder, maxRows);
+        Iterable<SourceRecord> composed = composer.compose(sourceId, objectName, raw, spec.composition);
+        if (!rejectDuplicates) return composed;
+        return () -> new AdjacentUniqueIterator(composed.iterator(), sourceId, objectName);
     }
 
-    private JdbcIterator query(String objectName, ObjectSpec spec, String sql,
-                               StatementBinder binder, int maxRows, boolean rejectDuplicates) {
+    private List<SourceRecord> composedRecords(String objectName, ObjectSpec spec, String sql,
+                                               StatementBinder binder, int maxRows) {
+        Iterable<RawRecord> raw = () -> query(objectName, spec, sql, binder, maxRows);
+        Set<String> keys = new LinkedHashSet<>();
+        List<SourceRecord> out = new ArrayList<>();
+        for (SourceRecord record : composer.compose(sourceId, objectName, raw, spec.composition)) {
+            if (!keys.add(record.getSourceKey())) {
+                throw new IllegalStateException("JDBC sourceObject 出现重复 sourceKey："
+                        + sourceId + "/" + objectName + "/" + record.getSourceKey());
+            }
+            out.add(record);
+        }
+        return List.copyOf(out);
+    }
+
+    private JdbcRawIterator query(String objectName, ObjectSpec spec, String sql,
+                                  StatementBinder binder, int maxRows) {
         Connection connection = null;
         PreparedStatement statement = null;
         try {
@@ -134,7 +168,7 @@ public final class JdbcSourceAdapter implements SourceAdapter {
             if (maxRows > 0) statement.setMaxRows(maxRows);
             binder.bind(statement);
             ResultSet resultSet = statement.executeQuery();
-            return new JdbcIterator(connection, statement, resultSet, sourceId, objectName, spec, rejectDuplicates);
+            return new JdbcRawIterator(connection, statement, resultSet, sourceId, objectName, spec);
         } catch (SQLException ex) {
             close(statement);
             close(connection);
@@ -161,22 +195,13 @@ public final class JdbcSourceAdapter implements SourceAdapter {
     }
 
     private static String orderBy(ObjectSpec spec) {
-        return " ORDER BY " + String.join(", ", spec.keyFields);
-    }
-
-    private static String sourceKey(Map<String, Object> fields, List<String> keyFields, String scope) {
-        List<String> values = new ArrayList<>();
-        for (String field : keyFields) {
-            Object value = fields.get(field);
-            String text = value == null ? "" : String.valueOf(value).trim();
-            if (text.isBlank()) throw new IllegalStateException("sourceKey 字段为空：" + field + " @ " + scope);
-            values.add(escapeKey(text));
+        if (spec.composition.recordMode() == RecordMode.ROW) {
+            return " ORDER BY " + String.join(", ", spec.keyFields);
         }
-        return String.join("|", values);
-    }
-
-    private static String escapeKey(String value) {
-        return value.replace("\\", "\\\\").replace("|", "\\|");
+        Set<String> fields = new LinkedHashSet<>(spec.composition.groupBy());
+        fields.add(spec.composition.orderBy());
+        fields.addAll(spec.keyFields);
+        return " ORDER BY " + String.join(", ", fields);
     }
 
     private static List<String> decodeSourceKey(String sourceKey, int expectedParts) {
@@ -231,6 +256,15 @@ public final class JdbcSourceAdapter implements SourceAdapter {
         return value.textValue().trim();
     }
 
+    private static String optionalText(JsonNode node, String field, String fallback, String scope) {
+        JsonNode value = node.get(field);
+        if (value == null || value.isNull()) return fallback;
+        if (!value.isTextual() || value.textValue().isBlank()) {
+            throw new IllegalArgumentException(scope + "." + field + " 必须是非空字符串");
+        }
+        return value.textValue().trim();
+    }
+
     private static int optionalPositiveInt(JsonNode node, String field, int fallback, String scope) {
         JsonNode value = node.get(field);
         if (value == null || value.isNull()) return fallback;
@@ -248,6 +282,29 @@ public final class JdbcSourceAdapter implements SourceAdapter {
         return value;
     }
 
+    private static List<String> identifierList(JsonNode node, String field, String scope, boolean required) {
+        JsonNode array = node.get(field);
+        if (array == null || array.isNull()) {
+            if (required) throw new IllegalArgumentException(scope + "." + field + " 必须是非空字符串数组");
+            return List.of();
+        }
+        if (!array.isArray() || (required && array.isEmpty())) {
+            throw new IllegalArgumentException(scope + "." + field + " 必须是非空字符串数组");
+        }
+        Set<String> unique = new LinkedHashSet<>();
+        for (JsonNode item : array) {
+            if (!item.isTextual() || item.textValue().isBlank()) {
+                throw new IllegalArgumentException(scope + "." + field + " 只能包含非空字符串");
+            }
+            String name = item.textValue().trim();
+            if (!COLUMN_IDENTIFIER.matcher(name).matches()) {
+                throw new IllegalArgumentException(scope + "." + field + " 不是受支持的 SQL 标识符：" + name);
+            }
+            if (!unique.add(name)) throw new IllegalArgumentException(scope + "." + field + " 包含重复字段：" + name);
+        }
+        return List.copyOf(unique);
+    }
+
     private static void close(AutoCloseable closeable) {
         if (closeable == null) return;
         try {
@@ -255,6 +312,10 @@ public final class JdbcSourceAdapter implements SourceAdapter {
         } catch (Exception ignored) {
             // Preserve the original JDBC failure.
         }
+    }
+
+    private static void closeIterator(Iterator<?> iterator) {
+        if (iterator instanceof AutoCloseable closeable) close(closeable);
     }
 
     @FunctionalInterface
@@ -266,11 +327,14 @@ public final class JdbcSourceAdapter implements SourceAdapter {
         private final String relation;
         private final List<String> keyFields;
         private final String watermarkField;
+        private final RecordCompositionSpec composition;
 
-        private ObjectSpec(String relation, List<String> keyFields, String watermarkField) {
+        private ObjectSpec(String relation, List<String> keyFields, String watermarkField,
+                           RecordCompositionSpec composition) {
             this.relation = relation;
             this.keyFields = keyFields;
             this.watermarkField = watermarkField;
+            this.composition = composition;
         }
 
         private static ObjectSpec parse(String objectName, JsonNode node) {
@@ -280,30 +344,31 @@ public final class JdbcSourceAdapter implements SourceAdapter {
             if (hasTable == hasView) throw new IllegalArgumentException(objectName + " 必须且只能配置 table 或 view");
             String field = hasTable ? "table" : "view";
             String relation = identifier(node, field, objectName, QUALIFIED_IDENTIFIER);
-            JsonNode keys = node.get("keyFields");
-            if (keys == null || !keys.isArray() || keys.isEmpty()) {
-                throw new IllegalArgumentException(objectName + ".keyFields 必须是非空字符串数组");
-            }
-            Set<String> unique = new LinkedHashSet<>();
-            for (JsonNode key : keys) {
-                if (!key.isTextual() || key.textValue().isBlank()) {
-                    throw new IllegalArgumentException(objectName + ".keyFields 只能包含非空字符串");
-                }
-                String name = key.textValue().trim();
-                if (!COLUMN_IDENTIFIER.matcher(name).matches()) {
-                    throw new IllegalArgumentException(objectName + ".keyFields 不是受支持的 SQL 标识符：" + name);
-                }
-                if (!unique.add(name)) throw new IllegalArgumentException(objectName + ".keyFields 包含重复字段：" + name);
+            List<String> keyFields = identifierList(node, "keyFields", objectName, true);
+            List<String> groupBy = identifierList(node, "groupBy", objectName, false);
+            String orderBy = node.hasNonNull("orderBy")
+                    ? identifier(node, "orderBy", objectName, COLUMN_IDENTIFIER) : "";
+            String modeText = optionalText(node, "recordMode", "row", objectName);
+            RecordCompositionSpec composition;
+            try {
+                composition = new RecordCompositionSpec(RecordCompositionSpec.parseMode(modeText),
+                        keyFields, groupBy, orderBy);
+            } catch (IllegalArgumentException ex) {
+                throw new IllegalArgumentException(objectName + "." + ex.getMessage(), ex);
             }
             String watermark = null;
             if (node.hasNonNull("watermarkField")) {
                 watermark = identifier(node, "watermarkField", objectName, COLUMN_IDENTIFIER);
             }
-            return new ObjectSpec(relation, List.copyOf(unique), watermark);
+            if (composition.recordMode() != RecordMode.ROW && watermark != null) {
+                throw new IllegalArgumentException(
+                        "JDBC 非 row 组合模式当前不支持 watermark 增量，请使用 row 模式或去除 watermarkField 后执行 full sync。");
+            }
+            return new ObjectSpec(relation, keyFields, watermark, composition);
         }
     }
 
-    private static final class JdbcIterator implements Iterator<SourceRecord>, AutoCloseable {
+    private static final class JdbcRawIterator implements Iterator<RawRecord>, AutoCloseable {
         private final Connection connection;
         private final PreparedStatement statement;
         private final ResultSet resultSet;
@@ -312,14 +377,13 @@ public final class JdbcSourceAdapter implements SourceAdapter {
         private final ObjectSpec spec;
         private final List<String> columns;
         private final Map<String, Integer> columnIndexes;
-        private final boolean rejectDuplicates;
         private boolean loaded;
         private boolean available;
         private boolean closed;
-        private String previousKey;
+        private long rowNumber;
 
-        private JdbcIterator(Connection connection, PreparedStatement statement, ResultSet resultSet,
-                             String sourceId, String objectName, ObjectSpec spec, boolean rejectDuplicates)
+        private JdbcRawIterator(Connection connection, PreparedStatement statement, ResultSet resultSet,
+                               String sourceId, String objectName, ObjectSpec spec)
                 throws SQLException {
             this.connection = connection;
             this.statement = statement;
@@ -327,7 +391,6 @@ public final class JdbcSourceAdapter implements SourceAdapter {
             this.sourceId = sourceId;
             this.objectName = objectName;
             this.spec = spec;
-            this.rejectDuplicates = rejectDuplicates;
             this.columns = new ArrayList<>();
             this.columnIndexes = new LinkedHashMap<>();
             ResultSetMetaData metadata = resultSet.getMetaData();
@@ -341,6 +404,8 @@ public final class JdbcSourceAdapter implements SourceAdapter {
                 columns.add(label);
             }
             for (String key : spec.keyFields) requireColumn(key);
+            for (String group : spec.composition.groupBy()) requireColumn(group);
+            if (!spec.composition.orderBy().isBlank()) requireColumn(spec.composition.orderBy());
             if (spec.watermarkField != null) requireColumn(spec.watermarkField);
         }
 
@@ -360,28 +425,22 @@ public final class JdbcSourceAdapter implements SourceAdapter {
         }
 
         @Override
-        public SourceRecord next() {
+        public RawRecord next() {
             if (!hasNext()) throw new NoSuchElementException();
             loaded = false;
             try {
+                rowNumber++;
                 Map<String, Object> fields = new LinkedHashMap<>();
                 for (int index = 0; index < columns.size(); index++) {
                     fields.put(columns.get(index), resultSet.getObject(index + 1));
                 }
-                String key = sourceKey(fields, spec.keyFields, sourceId + "/" + objectName);
-                if (rejectDuplicates && key.equals(previousKey)) {
-                    close();
-                    throw new IllegalStateException("JDBC sourceObject 出现重复 sourceKey："
-                            + sourceId + "/" + objectName + "/" + key);
-                }
-                previousKey = key;
-                fields.put(SYNTHETIC_SOURCE_KEY, key);
                 Instant timestamp = null;
                 if (spec.watermarkField != null) {
                     Timestamp value = resultSet.getTimestamp(columnIndexes.get(spec.watermarkField));
                     timestamp = value == null ? null : value.toInstant();
                 }
-                return new SourceRecord(sourceId, objectName, key, fields, timestamp);
+                return new RawRecord(fields, timestamp,
+                        sourceId + "/" + objectName + "/row=" + rowNumber);
             } catch (SQLException ex) {
                 close();
                 throw new IllegalStateException("JDBC 记录读取失败：" + sourceId + "/" + objectName, ex);
@@ -402,6 +461,58 @@ public final class JdbcSourceAdapter implements SourceAdapter {
             JdbcSourceAdapter.close(resultSet);
             JdbcSourceAdapter.close(statement);
             JdbcSourceAdapter.close(connection);
+        }
+    }
+
+    private static final class AdjacentUniqueIterator implements Iterator<SourceRecord>, AutoCloseable {
+        private final Iterator<SourceRecord> delegate;
+        private final String sourceId;
+        private final String objectName;
+        private String previousKey;
+        private boolean closed;
+
+        private AdjacentUniqueIterator(Iterator<SourceRecord> delegate, String sourceId, String objectName) {
+            this.delegate = delegate;
+            this.sourceId = sourceId;
+            this.objectName = objectName;
+        }
+
+        @Override
+        public boolean hasNext() {
+            if (closed) return false;
+            try {
+                boolean available = delegate.hasNext();
+                if (!available) close();
+                return available;
+            } catch (RuntimeException ex) {
+                close();
+                throw ex;
+            }
+        }
+
+        @Override
+        public SourceRecord next() {
+            if (!hasNext()) throw new NoSuchElementException();
+            try {
+                SourceRecord record = delegate.next();
+                if (record.getSourceKey().equals(previousKey)) {
+                    close();
+                    throw new IllegalStateException("JDBC sourceObject 出现重复 sourceKey："
+                            + sourceId + "/" + objectName + "/" + record.getSourceKey());
+                }
+                previousKey = record.getSourceKey();
+                return record;
+            } catch (RuntimeException ex) {
+                close();
+                throw ex;
+            }
+        }
+
+        @Override
+        public void close() {
+            if (closed) return;
+            closed = true;
+            closeIterator(delegate);
         }
     }
 }

@@ -118,6 +118,64 @@ class ExcelSourceAdapterTest {
     }
 
     @Test
+    void groupFirstSelectsTheLowestOrderedRowInEachGroup() throws Exception {
+        Path data = Files.createDirectories(temp.resolve("data"));
+        writeWorkbook(data.resolve("航路.xlsx"), "数据", List.of(
+                List.of("routeCode", "rowKey", "sequence", "point"),
+                List.of("R001", "R001:2", "2", "P2"),
+                List.of("R001", "R001:1", "1", "P1"),
+                List.of("R002", "R002:1", "1", "Q1")));
+
+        ExcelSourceAdapter adapter = adapter("""
+                sources:
+                  - sourceId: excel-main
+                    adapter: excel
+                    root: data
+                    objects:
+                      route-first:
+                        files: "航路.xlsx"
+                        sheet: 数据
+                        keyFields: [rowKey]
+                        recordMode: group_first
+                        groupBy: [routeCode]
+                        orderBy: sequence
+                """);
+
+        List<SourceRecord> records = list(adapter.readAll("route-first"));
+        assertEquals(List.of("R001:1", "R002:1"),
+                records.stream().map(SourceRecord::getSourceKey).toList());
+        assertEquals("P1", records.get(0).getFields().get("point"));
+    }
+
+    @Test
+    void adjacentNextNeverPairsRowsFromDifferentPhysicalFiles() throws Exception {
+        Path data = Files.createDirectories(temp.resolve("data"));
+        writeWorkbook(data.resolve("航路1.xlsx"), "数据", List.of(
+                List.of("routeCode", "rowKey", "sequence"),
+                List.of("R001", "R001:1", "1")));
+        writeWorkbook(data.resolve("航路2.xlsx"), "数据", List.of(
+                List.of("routeCode", "rowKey", "sequence"),
+                List.of("R001", "R001:2", "2")));
+
+        ExcelSourceAdapter adapter = adapter("""
+                sources:
+                  - sourceId: excel-main
+                    adapter: excel
+                    root: data
+                    objects:
+                      route-adjacent:
+                        files: "航路*.xlsx"
+                        sheet: 数据
+                        keyFields: [rowKey]
+                        recordMode: adjacent_next
+                        groupBy: [routeCode]
+                        orderBy: sequence
+                """);
+
+        assertEquals(0, list(adapter.readAll("route-adjacent")).size());
+    }
+
+    @Test
     void duplicateSourceKeyAcrossFilesFailsExplicitly() throws Exception {
         Path data = Files.createDirectories(temp.resolve("data"));
         writeWorkbook(data.resolve("航路1.xlsx"), "数据", List.of(
